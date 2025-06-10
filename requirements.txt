@@ -1,2 +1,3 @@
 Flask==2.0.1
-requests==2.25.0 # Versão com vulnerabilidade conhecida (CVE-2023-32681)
+Werkzeug==2.2.2  
+requests==2.25.0
