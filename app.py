@@ -25,7 +25,6 @@ def init_db():
 
 @app.route('/')
 def home():
-    # VULNERABILIDADE 3: XSS Refletido. A entrada 'name' é renderizada sem escape.
     name = request.args.get('name', 'Visitante')
     return f'<h1>Olá, {name}!</h1><p>API Key usada (exemplo): {API_KEY}</p>'
 
