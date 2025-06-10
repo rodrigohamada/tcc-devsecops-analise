@@ -8,8 +8,6 @@ on:
 jobs:
   security-analysis:
     runs-on: ubuntu-latest
-    # Permissões necessárias para que as ferramentas de segurança possam
-    # escrever os alertas de vulnerabilidade na aba "Security" do repositório.
     permissions:
       security-events: write
       actions: read
@@ -19,25 +17,22 @@ jobs:
       - name: 1. Checkout do Código
         uses: actions/checkout@v4
 
-      # --- ETAPA DE SEGURANÇA: SAST (Static Application Security Testing) ---
       - name: 2. Inicializar CodeQL para análise SAST
         uses: github/codeql-action/init@v3
         with:
-          languages: python # Especifica a linguagem a ser analisada
+          languages: python
 
-      # --- ETAPA DE SEGURANÇA: SCA e Secret Scanning com Trivy ---
       - name: 3. Scan de Vulnerabilidades e Segredos com Trivy
         uses: aquasecurity/trivy-action@0.24.0
         with:
-          scan-type: 'fs'             # 'fs' para escanear o sistema de arquivos (código e dependências)
-          scan-ref: '.'               # Escanear o diretório raiz do projeto
-          exit-code: '1'              # PONTO-CHAVE: Faz o pipeline FALHAR se encontrar vulnerabilidades
-          severity: 'CRITICAL,HIGH'   # Falhar apenas para severidades ALTA ou CRÍTICA
-          ignore-unfixed: true        # Ignora vulnerabilidades que ainda não têm uma correção oficial
-          format: 'sarif'             # Formato de saída para integração com a aba de Segurança
-          output: 'trivy-results.sarif' # Nome do arquivo de relatório
+          scan-type: 'fs'
+          scan-ref: '.'
+          exit-code: '1' # Mantemos a falha, pois é importante para o workflow
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
           
-      # --- ETAPAS NORMAIS DO CI (idênticas ao pipeline tradicional) ---
       - name: 4. Configurar Python
         uses: actions/setup-python@v5
         with:
@@ -55,11 +50,13 @@ jobs:
           
       # --- FINALIZAÇÃO E UPLOAD DOS RESULTADOS DE SEGURANÇA ---
       - name: 7. Executar Análise final do CodeQL
+        # CORREÇÃO APLICADA AQUI: Garante que a análise do CodeQL rode mesmo se o Trivy falhar.
+        if: always()
         uses: github/codeql-action/analyze@v3
 
       - name: 8. Upload dos resultados do Trivy para a aba de Segurança
-        # Esta etapa garante que os alertas encontrados pelo Trivy apareçam
-        # na interface do GitHub, junto com os do CodeQL.
+        # CORREÇÃO APLICADA AQUI: Garante que o upload do SARIF rode mesmo se o Trivy falhar.
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
