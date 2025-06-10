@@ -10,7 +10,9 @@ API_KEY = "sk-live-12345abcdefg67890hijklmn12345"
 
 # Função para inicializar o banco de dados
 def init_db():
-    conn = sqlite3.connect('database.db')
+    # Garante que o arquivo de DB seja criado no diretório do script
+    db_path = os.path.join(os.path.dirname(__file__), 'database.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -26,11 +28,13 @@ def init_db():
 @app.route('/')
 def home():
     name = request.args.get('name', 'Visitante')
-    return f'<h1>Olá, {name}!</h1><p>API Key usada (exemplo): {API_KEY}</p>'
+    # CORREÇÃO APLICADA AQUI: "Olá" foi trocado por "Ola"
+    return f'<h1>Ola, {name}!</h1><p>API Key usada (exemplo): {API_KEY}</p>'
 
 @app.route('/user/<username>')
 def get_user(username):
-    conn = sqlite3.connect('database.db')
+    db_path = os.path.join(os.path.dirname(__file__), 'database.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # VULNERABILIDADE 1: Injeção de SQL. A entrada do usuário é concatenada diretamente.
