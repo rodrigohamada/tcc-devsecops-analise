@@ -1,0 +1,33 @@
+name: Pipeline CI Tradicional
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Permite execução manual
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 1. Checkout do Código
+      uses: actions/checkout@v4
+
+    - name: 2. Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: 3. Instalar Dependências
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 4. Executar Testes Unitários
+      run: |
+        python test_app.py
+
+    - name: 5. Simular Deploy (Log)
+      run: |
+        echo "Pipeline concluído. Iniciando deploy para produção..."
+        echo "Deploy realizado com sucesso (simulação)!"
