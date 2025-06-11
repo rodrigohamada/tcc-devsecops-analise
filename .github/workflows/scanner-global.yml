@@ -16,12 +16,11 @@ jobs:
       - name: 1. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      # CORREÇÃO 1: Garantindo a família de fontes Noto completa
-      - name: 2. Instalar Ferramentas (Python, Pipx, Pandoc, LaTeX Completo)
+      # Instalação simplificada: não precisamos mais de xetex nem fontes de emoji
+      - name: 2. Instalar Ferramentas
         run: |
           sudo apt-get update
-          # Adicionamos 'fonts-noto' para ter a família completa (serif, sans-serif, etc)
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-fonts-recommended texlive-latex-extra texlive-pictures texlive-xetex fonts-noto fonts-noto-color-emoji gitleaks
+          sudo apt-get install -y python3-pip pandoc texlive-latex-extra gitleaks
           sudo pipx install semgrep
 
       - name: 3. Clonar Repositório Alvo
@@ -37,23 +36,17 @@ jobs:
           gitleaks detect --report-format json --report-path ../gitleaks-output.json
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target
 
-      - name: 5. Gerar Relatório em Markdown
+      - name: 5. Gerar Relatórios (MD e Temp para PDF)
         run: |
           python3 report.py $REPO_NAME
       
-      # CORREÇÃO 2: Definindo a família de fontes Noto para o Pandoc
+      # CORREÇÃO: Usa o arquivo temporário SEM ÍCONES e ajusta a geometria da página
       - name: 6. Converter Relatório para PDF
         run: |
-          # Adicionamos as variáveis (-V) para definir a família de fontes Noto,
-          # que suporta os caracteres Unicode e emojis.
-          pandoc \
-            --pdf-engine=xelatex \
-            -V mainfont="Noto Serif" \
-            -V sansfont="Noto Sans" \
-            -V monofont="Noto Sans Mono" \
-            -f markdown "relatorio-$REPO_NAME.md" -o "relatorio-$REPO_NAME.pdf"
+          # A variável -V geometry ajusta as margens para evitar que o texto da tabela se sobreponha
+          pandoc -V geometry:"a4paper, margin=1in" temp-report-for-pdf.md -o "relatorio-$REPO_NAME.pdf"
 
-      - name: 7. Upload dos Relatórios (MD e PDF)
+      - name: 7. Upload dos Relatórios Finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
           name: Relatorio-Scanner-${{ env.REPO_NAME }}
