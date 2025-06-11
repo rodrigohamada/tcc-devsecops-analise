@@ -1,0 +1,65 @@
+name: Scanner de Segurança Universal
+
+# Define o gatilho: Manual (workflow_dispatch)
+on:
+  workflow_dispatch:
+    # Define os campos de entrada que o usuário verá
+    inputs:
+      repo_url:
+        description: 'URL completa do repositório GitHub público a ser escaneado'
+        required: true
+        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
+
+jobs:
+  scan-and-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Faz o checkout do SEU repositório, para termos acesso ao script report.py
+      - name: 1. Checkout do código do Scanner
+        uses: actions/checkout@v4
+
+      # 2. Instala as ferramentas necessárias no ambiente do GitHub
+      - name: 2. Instalar Ferramentas (Python, Pipx, Pandoc)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base gitleaks
+          sudo pipx install semgrep
+
+      # 3. Clona o repositório ALVO que o usuário informou
+      - name: 3. Clonar Repositório Alvo
+        run: |
+          git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
+      
+      # 4. Executa as ferramentas de scan no repositório alvo
+      - name: 4. Executar Scans de Segurança
+        run: |
+          # Extrai o nome do repo para usar no nome do arquivo
+          REPO_NAME=$(basename ${{ github.event.inputs.repo_url }} .git)
+          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV # Salva o nome para usar depois
+
+          # Executa os scans, salvando os resultados na pasta principal
+          cd target_repo
+          semgrep scan --config auto --json > ../semgrep-output.json
+          gitleaks detect --report-format json --report-path ../gitleaks-output.json
+          # O Trivy precisa ser executado via Docker
+          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target
+
+      # 5. Gera o relatório em Markdown usando nosso script Python
+      - name: 5. Gerar Relatório em Markdown
+        run: |
+          python3 report.py $REPO_NAME
+      
+      # 6. Converte o relatório Markdown para PDF usando Pandoc
+      - name: 6. Converter Relatório para PDF
+        run: |
+          pandoc "relatorio-$REPO_NAME.md" -o "relatorio-$REPO_NAME.pdf"
+
+      # 7. Faz o upload dos relatórios como um artefato de workflow
+      - name: 7. Upload dos Relatórios (MD e PDF)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Relatorio-Scanner-${{ env.REPO_NAME }}
+          path: |
+            relatorio-${{ env.REPO_NAME }}.md
+            relatorio-${{ env.REPO_NAME }}.pdf
