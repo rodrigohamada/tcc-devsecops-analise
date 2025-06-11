@@ -7,8 +7,9 @@ def process_semgrep(data):
     results = data.get("results", [])
     findings = []
     for r in results:
+        rule_id_wrappable = r["check_id"].replace(".", ".\u200B").replace("-", "-\u200B")
         findings.append({
-            "descricao": r["check_id"], "severidade": r["extra"]["severity"],
+            "descricao": rule_id_wrappable, "severidade": r["extra"]["severity"],
             "arquivo": r["path"], "linha": r["start"]["line"],
             "mensagem": r["extra"]["message"].split('\n')[0]
         })
@@ -38,7 +39,7 @@ def process_trivy(data):
             })
     return findings
 
-# --- Geração do Relatório em Markdown (LÓGICA ALTERADA) ---
+# --- Geração do Relatório em Markdown ---
 def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
     total_findings = len(semgrep_f) + len(gitleaks_f) + len(trivy_f)
     sast_count = len(semgrep_f); secret_count = len(gitleaks_f); sca_count = len(trivy_f)
@@ -46,13 +47,13 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
     crit_count = severities.count("CRITICAL"); high_count = severities.count("HIGH")
     med_count = severities.count("MEDIUM"); low_count = severities.count("LOW")
 
-    # Conteúdo do cabeçalho e resumo (continua com tabelas, pois são simples)
+    # CORREÇÃO APLICADA AQUI: A linha "***" foi removida
     md_content = f"""
 # Relatório de Análise de Segurança - DevSecOps Scanner
 
 **Repositório Analisado:** `{repo_name}`
 **Data do Scan:** {datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
-***
+
 ## 📊 Resumo Executivo e Métricas
 
 | Métrica | Quantidade |
@@ -70,11 +71,10 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
 | 🟧 ALTA | {high_count} |
 | 🟨 MÉDIA | {med_count} |
 | INFORMACIONAL/BAIXA | {low_count} |
-***
+
 ## 🔬 Detalhamento dos Achados
 """
-    # NOVO FORMATO: Blocos de texto em vez de tabelas para os detalhes
-    
+    # O resto do script para gerar os blocos continua o mesmo...
     md_content += "\n### 🛡️ SAST (Análise Estática do Código-Fonte)\n"
     if semgrep_f:
         for f in semgrep_f:
@@ -102,11 +102,9 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
             md_content += f"**Título:** {f['titulo']}\n"
     else: md_content += "\n✅ Nenhuma dependência vulnerável encontrada.\n"
 
-    # Salva o relatório .md com ícones
     report_filename_md = f"relatorio-{repo_name}.md"
     with open(report_filename_md, "w", encoding="utf-8") as f: f.write(md_content)
 
-    # Cria a versão para PDF sem ícones
     pdf_content = md_content
     emojis_to_remove = ["📊", "🚨", "🔥", "🟧", "🟨", "🔬", "🛡️", "🔑", "📦", "✅"]
     for emoji in emojis_to_remove: pdf_content = pdf_content.replace(emoji, "")
