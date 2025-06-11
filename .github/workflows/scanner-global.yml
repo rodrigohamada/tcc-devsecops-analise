@@ -19,7 +19,8 @@ jobs:
       - name: 2. Instalar Ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-extra gitleaks
+          # Instala a suíte completa de LaTeX e fontes para máxima compatibilidade
+          sudo apt-get install -y python3-pip pandoc texlive-xetex texlive-latex-extra texlive-fonts-recommended fonts-noto gitleaks
           sudo pipx install semgrep
 
       - name: 3. Clonar Repositório Alvo
@@ -35,18 +36,22 @@ jobs:
           gitleaks detect --report-format json --report-path ../gitleaks-output.json
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target
 
-      - name: 5. Gerar Relatórios (MD e Temp para PDF)
+      - name: 5. Gerar Relatórios
         run: |
           python3 report.py $REPO_NAME
       
-      # CORREÇÃO FINAL APLICADA AQUI
+      # ETAPA FINAL: Comando Pandoc definitivo para formatação de tabelas
       - name: 6. Converter Relatório para PDF com Formatação Avançada
         run: |
-          # -V table-width: Força as tabelas a usar a largura da página, quebrando as linhas.
-          # --table-of-contents: Adiciona um sumário profissional ao PDF.
+          # Este comando usa as configurações mais robustas para garantir a quebra de linha
           pandoc \
+            --pdf-engine=xelatex \
+            -V mainfont="Noto Serif" \
+            -V sansfont="Noto Sans" \
             -V geometry:"a4paper, margin=1in" \
-            -V table-width=0.9\\linewidth \
+            -V header-includes:"\\usepackage{tabularx}" \
+            -V header-includes:"\\usepackage{fvextra}" \
+            -V header-includes:"\\DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}" \
             --table-of-contents \
             -f markdown "temp-report-for-pdf.md" \
             -o "relatorio-$REPO_NAME.pdf"
