@@ -65,12 +65,12 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
 
     # Construção do conteúdo do relatório
     report_content = f"""
-#  relatório de Análise de Segurança - DevSecOps Scanner
+# Relatório de Análise de Segurança - DevSecOps Scanner
 
 **Repositório Analisado:** `{repo_name}`
 **Data do Scan:** {datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
 
----
+***
 ## 📊 Resumo Executivo e Métricas
 
 | Métrica | Quantidade |
@@ -89,7 +89,7 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
 | 🟨 MÉDIA | {med_count} |
 | INFORMACIONAL/BAIXA | {low_count} |
 
----
+***
 ## 🔬 Detalhamento dos Achados
 
 """
@@ -138,13 +138,13 @@ if __name__ == "__main__":
     try:
         with open("semgrep-output.json") as f:
             semgrep_data = json.load(f)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         semgrep_data = {}
 
     try:
         with open("gitleaks-output.json") as f:
             gitleaks_data = json.load(f)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         gitleaks_data = []
 
     try:
