@@ -16,10 +16,12 @@ jobs:
       - name: 1. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 2. Instalar Ferramentas (Python, Pipx, Pandoc)
+      # CORREÇÃO APLICADA NA LINHA "run" ABAIXO
+      - name: 2. Instalar Ferramentas (Python, Pipx, Pandoc, LaTeX Completo)
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base gitleaks
+          # Adicionamos mais pacotes texlive para incluir dependências como 'xcolor.sty'
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-fonts-recommended texlive-latex-extra texlive-pictures gitleaks
           sudo pipx install semgrep
 
       - name: 3. Clonar Repositório Alvo
@@ -39,10 +41,8 @@ jobs:
         run: |
           python3 report.py $REPO_NAME
       
-      # CORREÇÃO APLICADA NA LINHA ABAIXO
       - name: 6. Converter Relatório para PDF
         run: |
-          # Adicionamos a flag "-f markdown" para evitar o erro de parse do YAML
           pandoc -f markdown "relatorio-$REPO_NAME.md" -o "relatorio-$REPO_NAME.pdf"
 
       - name: 7. Upload dos Relatórios (MD e PDF)
