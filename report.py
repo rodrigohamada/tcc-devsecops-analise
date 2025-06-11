@@ -2,14 +2,21 @@ import json
 import sys
 import datetime
 
-# --- Funções para Processar os Resultados de Cada Ferramenta (sem alterações) ---
+# --- Funções para Processar os Resultados de Cada Ferramenta ---
+
 def process_semgrep(data):
     results = data.get("results", [])
     findings = []
     for r in results:
+        # CORREÇÃO APLICADA AQUI: Adiciona um "espaço de quebra invisível" (\u200B)
+        # após cada ponto na descrição da regra. Isso permite a quebra de linha.
+        rule_id_wrappable = r["check_id"].replace(".", ".\u200B")
+        
         findings.append({
-            "descricao": r["check_id"], "severidade": r["extra"]["severity"],
-            "arquivo": r["path"], "linha": r["start"]["line"],
+            "descricao": rule_id_wrappable,
+            "severidade": r["extra"]["severity"],
+            "arquivo": r["path"],
+            "linha": r["start"]["line"],
             "mensagem": r["extra"]["message"].split('\n')[0]
         })
     return findings
@@ -46,7 +53,6 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
     crit_count = severities.count("CRITICAL"); high_count = severities.count("HIGH")
     med_count = severities.count("MEDIUM"); low_count = severities.count("LOW")
 
-    # Conteúdo do relatório COM ÍCONES (para o arquivo .md)
     md_content = f"""
 # Relatório de Análise de Segurança - DevSecOps Scanner
 
@@ -91,18 +97,15 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
         for f in trivy_f: md_content += f"| {f['severidade']} | `{f['id_vuln']}` | {f['pacote']} | {f['versao_instalada']} | {f['titulo']} |\n"
     else: md_content += "✅ Nenhuma dependência vulnerável encontrada.\n"
 
-    # Salva o relatório .md com ícones
     report_filename_md = f"relatorio-{repo_name}.md"
     with open(report_filename_md, "w", encoding="utf-8") as f:
         f.write(md_content)
 
-    # NOVO: Cria uma versão do conteúdo SEM ÍCONES para o PDF
     pdf_content = md_content
     emojis_to_remove = ["📊", "🚨", "🔥", "🟧", "🟨", "🔬", "🛡️", "🔑", "📦", "✅"]
     for emoji in emojis_to_remove:
         pdf_content = pdf_content.replace(emoji, "")
     
-    # Salva o conteúdo limpo em um arquivo temporário para o Pandoc usar
     temp_pdf_md_filename = "temp-report-for-pdf.md"
     with open(temp_pdf_md_filename, "w", encoding="utf-8") as f:
         f.write(pdf_content)
@@ -110,7 +113,6 @@ def generate_report(repo_name, semgrep_f, gitleaks_f, trivy_f):
 # --- Função Principal ---
 if __name__ == "__main__":
     repo_name = sys.argv[1] if len(sys.argv) > 1 else "desconhecido"
-    # Carrega os dados dos arquivos JSON
     try:
         with open("semgrep-output.json") as f: semgrep_data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError): semgrep_data = {}
