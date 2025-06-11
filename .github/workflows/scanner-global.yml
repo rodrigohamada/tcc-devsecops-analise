@@ -35,21 +35,18 @@ jobs:
           gitleaks detect --report-format json --report-path ../gitleaks-output.json
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target
 
-      - name: 5. Gerar Relatórios
+      - name: 5. Gerar Relatórios (MD e Temp para PDF)
         run: |
           python3 report.py $REPO_NAME
       
-      # NOVO PASSO DE DEPURAÇÃO PARA PROVAR O CONTEÚDO DO ARQUIVO
-      - name: DEBUG - Mostrar conteúdo do arquivo para Pandoc
+      # CORREÇÃO FINAL APLICADA AQUI
+      - name: 6. Converter Relatório para PDF com Formatação Avançada
         run: |
-          echo "--- Conteúdo do arquivo temp-report-for-pdf.md ---"
-          cat temp-report-for-pdf.md
-          echo "--- Fim do conteúdo ---"
-
-      - name: 6. Converter Relatório para PDF
-        run: |
+          # -V table-width: Força as tabelas a usar a largura da página, quebrando as linhas.
+          # --table-of-contents: Adiciona um sumário profissional ao PDF.
           pandoc \
             -V geometry:"a4paper, margin=1in" \
+            -V table-width=0.9\\linewidth \
             --table-of-contents \
             -f markdown "temp-report-for-pdf.md" \
             -o "relatorio-$REPO_NAME.pdf"
