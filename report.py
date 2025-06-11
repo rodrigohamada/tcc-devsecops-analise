@@ -8,19 +8,17 @@ def process_semgrep(data):
     results = data.get("results", [])
     findings = []
     for r in results:
-        # CORREÇÃO APLICADA AQUI: Adiciona um "espaço de quebra invisível" (\u200B)
-        # após cada ponto na descrição da regra. Isso permite a quebra de linha.
-        rule_id_wrappable = r["check_id"].replace(".", ".\u200B")
+        # CORREÇÃO APLICADA AQUI: Adiciona quebra invisível em pontos e traços
+        rule_id_wrappable = r["check_id"].replace(".", ".\u200B").replace("-", "-\u200B")
         
         findings.append({
-            "descricao": rule_id_wrappable,
-            "severidade": r["extra"]["severity"],
-            "arquivo": r["path"],
-            "linha": r["start"]["line"],
+            "descricao": rule_id_wrappable, "severidade": r["extra"]["severity"],
+            "arquivo": r["path"], "linha": r["start"]["line"],
             "mensagem": r["extra"]["message"].split('\n')[0]
         })
     return findings
 
+# O resto do arquivo permanece o mesmo...
 def process_gitleaks(data):
     findings = []
     for r in data:
