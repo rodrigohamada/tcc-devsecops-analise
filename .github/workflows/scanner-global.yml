@@ -16,12 +16,12 @@ jobs:
       - name: 1. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      # CORREÇÃO APLICADA NA LINHA "run" ABAIXO
+      # CORREÇÃO 1: Adicionando o motor XeLaTeX e fontes de emoji
       - name: 2. Instalar Ferramentas (Python, Pipx, Pandoc, LaTeX Completo)
         run: |
           sudo apt-get update
-          # Adicionamos mais pacotes texlive para incluir dependências como 'xcolor.sty'
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-fonts-recommended texlive-latex-extra texlive-pictures gitleaks
+          # Adicionamos texlive-xetex (motor moderno) e fonts-noto-color-emoji (fonte para emojis)
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-fonts-recommended texlive-latex-extra texlive-pictures texlive-xetex fonts-noto-color-emoji gitleaks
           sudo pipx install semgrep
 
       - name: 3. Clonar Repositório Alvo
@@ -41,9 +41,11 @@ jobs:
         run: |
           python3 report.py $REPO_NAME
       
+      # CORREÇÃO 2: Instruindo o Pandoc a usar o motor XeLaTeX
       - name: 6. Converter Relatório para PDF
         run: |
-          pandoc -f markdown "relatorio-$REPO_NAME.md" -o "relatorio-$REPO_NAME.pdf"
+          # Adicionamos --pdf-engine=xelatex para usar o motor que entende Unicode/Emojis
+          pandoc --pdf-engine=xelatex -f markdown "relatorio-$REPO_NAME.md" -o "relatorio-$REPO_NAME.pdf"
 
       - name: 7. Upload dos Relatórios (MD e PDF)
         uses: actions/upload-artifact@v4
