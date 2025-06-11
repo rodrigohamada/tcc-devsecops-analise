@@ -19,7 +19,6 @@ jobs:
       - name: 2. Instalar Ferramentas
         run: |
           sudo apt-get update
-          # Mantemos uma instalação LaTeX robusta para garantir a renderização
           sudo apt-get install -y python3-pip pandoc texlive-latex-extra gitleaks
           sudo pipx install semgrep
 
@@ -40,10 +39,15 @@ jobs:
         run: |
           python3 report.py $REPO_NAME
       
-      # ETAPA FINAL: Comando Pandoc simplificado
+      # NOVO PASSO DE DEPURAÇÃO PARA PROVAR O CONTEÚDO DO ARQUIVO
+      - name: DEBUG - Mostrar conteúdo do arquivo para Pandoc
+        run: |
+          echo "--- Conteúdo do arquivo temp-report-for-pdf.md ---"
+          cat temp-report-for-pdf.md
+          echo "--- Fim do conteúdo ---"
+
       - name: 6. Converter Relatório para PDF
         run: |
-          # Agora que não temos mais tabelas complexas, um comando simples é suficiente.
           pandoc \
             -V geometry:"a4paper, margin=1in" \
             --table-of-contents \
