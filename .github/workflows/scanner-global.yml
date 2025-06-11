@@ -16,7 +16,6 @@ jobs:
       - name: 1. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      # Instalação simplificada: não precisamos mais de xetex nem fontes de emoji
       - name: 2. Instalar Ferramentas
         run: |
           sudo apt-get update
@@ -40,11 +39,17 @@ jobs:
         run: |
           python3 report.py $REPO_NAME
       
-      # CORREÇÃO: Usa o arquivo temporário SEM ÍCONES e ajusta a geometria da página
-      - name: 6. Converter Relatório para PDF
+      # CORREÇÃO FINAL APLICADA AQUI
+      - name: 6. Converter Relatório para PDF com Formatação Avançada
         run: |
-          # A variável -V geometry ajusta as margens para evitar que o texto da tabela se sobreponha
-          pandoc -V geometry:"a4paper, margin=1in" temp-report-for-pdf.md -o "relatorio-$REPO_NAME.pdf"
+          # -V table-width: Força as tabelas a usar a largura da página, quebrando as linhas.
+          # --table-of-contents: Adiciona um sumário profissional ao PDF.
+          pandoc \
+            -V geometry:"a4paper, margin=1in" \
+            -V table-width=0.9\\linewidth \
+            --table-of-contents \
+            -f markdown "temp-report-for-pdf.md" \
+            -o "relatorio-$REPO_NAME.pdf"
 
       - name: 7. Upload dos Relatórios Finais (MD e PDF)
         uses: actions/upload-artifact@v4
