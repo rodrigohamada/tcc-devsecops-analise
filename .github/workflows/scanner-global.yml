@@ -6,7 +6,7 @@ on:
       repo_url:
         description: 'URL completa do repositório GitHub público a ser escaneado'
         required: true
-        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
+        default: ''
 
 jobs:
   # Job 1: Apenas para extrair o nome do repositório da URL
