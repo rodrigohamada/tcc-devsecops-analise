@@ -1,8 +1,5 @@
 name: Scanner de Segurança Universal
 
-# NOVA SEÇÃO: Define um nome dinâmico para cada execução do workflow
-run-name: Scan do repo ${{ github.event.inputs.repo_url }} por ${{ github.actor }}
-
 on:
   workflow_dispatch:
     inputs:
@@ -12,9 +9,26 @@ on:
         default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
+  # Job 1: Apenas para extrair o nome do repositório da URL
+  get-repo-name:
+    runs-on: ubuntu-latest
+    outputs:
+      repo_name: ${{ steps.get_name.outputs.repository }}
+    steps:
+      - name: Extrair nome do repositório da URL
+        id: get_name
+        uses: ASzc/get-repo-name-action@v1
+        with:
+          repository: ${{ github.event.inputs.repo_url }}
+
+  # Job 2: O nosso scanner principal, que agora depende do Job 1
   scan-and-report:
+    needs: get-repo-name # Define que este job só começa depois que 'get-repo-name' terminar
     runs-on: ubuntu-latest
     
+    # Define um nome dinâmico para cada execução do workflow
+    name: Scan do repo ${{needs.get-repo-name.outputs.repo_name}} por ${{ github.actor }}
+
     steps:
       - name: 1. Checkout do código do Scanner
         uses: actions/checkout@v4
@@ -22,7 +36,6 @@ jobs:
       - name: 2. Instalar Ferramentas
         run: |
           sudo apt-get update
-          # Instalação LaTeX robusta para garantir a renderização
           sudo apt-get install -y python3-pip pandoc texlive-xetex texlive-latex-extra texlive-fonts-recommended fonts-noto gitleaks
           sudo pipx install semgrep
 
@@ -32,7 +45,8 @@ jobs:
       
       - name: 4. Executar Scans de Segurança
         run: |
-          REPO_NAME=$(basename ${{ github.event.inputs.repo_url }} .git)
+          # O nome do repositório agora vem do output do primeiro job
+          REPO_NAME=${{needs.get-repo-name.outputs.repo_name}}
           echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
           cd target_repo
           semgrep scan --config auto --json > ../semgrep-output.json
@@ -41,11 +55,11 @@ jobs:
 
       - name: 5. Gerar Relatórios
         run: |
-          python3 report.py $REPO_NAME
+          python3 report.py ${{needs.get-repo-name.outputs.repo_name}}
       
       - name: 6. Converter Relatório para PDF com Formatação Avançada
         run: |
-          # Este comando usa as configurações mais robustas para garantir a quebra de linha
+          REPO_NAME=${{needs.get-repo-name.outputs.repo_name}}
           pandoc \
             --pdf-engine=xelatex \
             -V mainfont="Noto Serif" \
@@ -61,7 +75,7 @@ jobs:
       - name: 7. Upload dos Relatórios Finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
-          name: Relatorio-Scanner-${{ env.REPO_NAME }}
+          name: Relatorio-Scanner-${{needs.get-repo-name.outputs.repo_name}}
           path: |
-            relatorio-${{ env.REPO_NAME }}.md
-            relatorio-${{ env.REPO_NAME }}.pdf
+            relatorio-${{needs.get-repo-name.outputs.repo_name}}.md
+            relatorio-${{needs.get-repo-name.outputs.repo_name}}.pdf
