@@ -3,10 +3,13 @@ import os
 import sys
 import requests
 
+# ==============================================================================
+# FUNÇÃO DE CHAMADA DA IA (usando a API do Gemini com a biblioteca 'requests')
+# ==============================================================================
 def ask_generative_ai(prompt):
+    """Função genérica para enviar um prompt para a IA e retornar a resposta."""
     print(f"🤖 Enviando prompt para a IA:\n---\n{prompt}\n---")
     
-    # CORREÇÃO: Lê a chave de API do ambiente do workflow
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("❌ Chave de API do Gemini não encontrada. Abortando.")
@@ -14,7 +17,9 @@ def ask_generative_ai(prompt):
 
     chatHistory = [{"role": "user", "parts": [{"text": prompt}]}]
     payload = {"contents": chatHistory}
-    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    
+    # CORREÇÃO: Usando o modelo 'gemini-1.5-flash-latest' que é mais disponível
+    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
     
     try:
         response = requests.post(apiUrl, json=payload, headers={'Content-Type': 'application/json'})
@@ -31,7 +36,9 @@ def ask_generative_ai(prompt):
         print(f"❌ Erro ao chamar a API da IA: {e}")
     return None
 
-# O resto do arquivo permanece exatamente o mesmo
+# ==============================================================================
+# O RESTANTE DO ARQUIVO PERMANECE EXATAMENTE O MESMO
+# ==============================================================================
 def create_remediation_plan(finding):
     file_path = finding['file']
     code_snippet = "N/A"
@@ -39,14 +46,16 @@ def create_remediation_plan(finding):
     if finding['type'] in ['SAST', 'SECRET']:
         line_number = finding['line']
         try:
-            with open(os.path.join("target_repo", file_path), 'r') as f:
+            # Garante que o caminho para o arquivo no repositório alvo seja correto
+            full_file_path = os.path.join("target_repo", file_path)
+            with open(full_file_path, 'r') as f:
                 lines = f.readlines()
                 context_start = max(0, line_number - 4)
                 context_end = min(len(lines), line_number + 3)
                 code_snippet = "".join(lines[context_start:context_end])
                 vulnerable_line = lines[line_number - 1].strip()
         except Exception as e:
-            print(f"Aviso: não foi possível ler o trecho de código para {file_path}. Erro: {e}")
+            print(f"Aviso: não foi possível ler o trecho de código para {full_file_path}. Erro: {e}")
             code_snippet = "Não foi possível ler o trecho de código."
     
     prompt = ""
@@ -84,7 +93,8 @@ def main():
     for r in gitleaks_data: all_findings.append({'type': 'SECRET', 'rule': r["Description"], 'severity': 'CRITICAL', 'file': r["File"], 'line': r["StartLine"]})
     if trivy_data.get("Results"):
         for res in trivy_data["Results"]:
-            if "requirements.txt" in res.get("Target"):
+            # Corrigido para lidar com caminhos como 'target_repo/requirements.txt'
+            if "requirements.txt" in res.get("Target", ""):
                 for v in res.get("Vulnerabilities", []): all_findings.append({'type': 'SCA', 'vuln_id': v.get("VulnerabilityID"), 'package': v.get("PkgName"), 'version': v.get("InstalledVersion"), 'severity': v.get("Severity"), 'file': res.get("Target"), 'line': -1})
 
     critical_findings = [f for f in all_findings if f.get('severity') in ['CRITICAL', 'HIGH']]
