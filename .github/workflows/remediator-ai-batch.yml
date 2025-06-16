@@ -42,7 +42,8 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python3 intelligent_batch_remediator.py
+          # CORREÇÃO: Usa o caminho relativo para encontrar o script
+          python3 ../intelligent_batch_remediator.py
           if [ -f "batch_remediation_log.json" ] && [ $(jq 'length' batch_remediation_log.json) -gt 0 ]; then
             echo "plan_exists=true" >> $GITHUB_OUTPUT
           else
@@ -53,8 +54,7 @@ jobs:
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: python3 apply_batch_fix.py
         env:
-          # Passa todas as informações necessárias como variáveis de ambiente para o script Python
           GH_PAT: ${{ secrets.GH_PAT }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }} # O gh cli também usa GITHUB_TOKEN
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           REPO_URL: ${{ github.event.inputs.repo_url }}
           RUN_ID: ${{ github.run_id }}
