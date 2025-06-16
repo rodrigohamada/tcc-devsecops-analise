@@ -66,7 +66,6 @@ def apply_fixes_and_create_pr():
         pr_body += f"- **{fix['rule']}** no arquivo `{fix['file']}`\n"
     pr_body += "\n**Ação Necessária:** Por favor, revise, teste e aprove este Pull Request."
 
-    # Salva o corpo do PR em um arquivo para usar com o gh cli
     with open("pr_body.md", "w") as f:
         f.write(pr_body)
 
