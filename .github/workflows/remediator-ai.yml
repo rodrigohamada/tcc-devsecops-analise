@@ -6,7 +6,7 @@ on:
       repo_url:
         description: 'URL do repositório público a ser escaneado e corrigido'
         required: true
-        default: '[https://github.com/rodrigohamada/tcc-devsecops-analise](https://github.com/rodrigohamada/tcc-devsecops-analise)'
+        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
   scan-and-remediate-bot:
@@ -39,7 +39,6 @@ jobs:
 
       - name: 5. Executar IA para Gerar Plano de Correção
         id: remediation_step
-        # CORREÇÃO: Passa a chave secreta como uma variável de ambiente para o script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -47,25 +46,31 @@ jobs:
           if [ -f "remediation_plan.json" ]; then
             echo "plan_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "plan_exists=false" >> <span class="math-inline">GITHUB\_OUTPUT
-fi
-\- name\: 6\. Aplicar Correção e Criar Pull Request
-if\: steps\.remediation\_step\.outputs\.plan\_exists \=\= 'true'
-run\: \|
-REPO\_OWNER\=</span>(echo "<span class="math-inline">\{\{ github\.event\.inputs\.repo\_url \}\}" \| cut \-d'/' \-f4\)
-REPO\_NAME\=</span>(echo "<span class="math-inline">\{\{ github\.event\.inputs\.repo\_url \}\}" \| cut \-d'/' \-f5 \| sed 's/\\\.git</span>//')
+            echo "plan_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 6. Aplicar Correção e Criar Pull Request
+        if: steps.remediation_step.outputs.plan_exists == 'true'
+        run: |
+          # CORREÇÃO APLICADA AQUI: Atribui a URL a uma variável antes de usá-la.
+          URL=${{ github.event.inputs.repo_url }}
+          REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
+          REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
           
-          FILE_TO_FIX=<span class="math-inline">\(jq \-r '\.file' remediation\_plan\.json\)
-VULNERABLE\_CODE\_RAW\=</span>(jq -r '.vulnerable_code' remediation_plan.json)
-          VULNERABLE_CODE_ESCAPED=$(printf '%s\n' "<span class="math-inline">VULNERABLE\_CODE\_RAW" \| sed 's\:\[\]\[\\\\/\.^</span>*]:\\&:g')
-          SUGGESTED_FIX_RAW=<span class="math-inline">\(jq \-r '\.suggested\_fix' remediation\_plan\.json\)
-SUGGESTED\_FIX\_ESCAPED\=</span>(printf '%s\n' "<span class="math-inline">SUGGESTED\_FIX\_RAW" \| sed 's\:\[\]\[\\\\/\.^</span>*]:\\&:g')
-          RULE_ID=<span class="math-inline">\(jq \-r '\.rule' remediation\_plan\.json\)
-git clone https\://x\-access\-token\:</span>{{ secrets.GITHUB_TOKEN }}@[github.com/<span class="math-inline">\]\(https\://github\.com/</span>){REPO_OWNER}/<span class="math-inline">\{REPO\_NAME\}\.git target\_repo\_pr
-cd target\_repo\_pr
-BRANCH\_NAME\="fix/ai\-remediation\-</span>{RULE_ID}"
-          git checkout -b <span class="math-inline">BRANCH\_NAME
-sed \-i "s\|</span>{VULNERABLE_CODE_ESCAPED}|<span class="math-inline">\{SUGGESTED\_FIX\_ESCAPED\}\|g" "</span>{FILE_TO_FIX}"
+          FILE_TO_FIX=$(jq -r '.file' remediation_plan.json)
+          VULNERABLE_CODE_RAW=$(jq -r '.vulnerable_code' remediation_plan.json)
+          VULNERABLE_CODE_ESCAPED=$(printf '%s\n' "$VULNERABLE_CODE_RAW" | sed 's:[][\\/.^$*]:\\&:g')
+          SUGGESTED_FIX_RAW=$(jq -r '.suggested_fix' remediation_plan.json)
+          SUGGESTED_FIX_ESCAPED=$(printf '%s\n' "$SUGGESTED_FIX_RAW" | sed 's:[][\\/.^$*]:\\&:g')
+          RULE_ID=$(jq -r '.rule' remediation_plan.json)
+
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
+          cd target_repo_pr
+
+          BRANCH_NAME="fix/ai-remediation-${RULE_ID}"
+          git checkout -b $BRANCH_NAME
+
+          sed -i "s|${VULNERABLE_CODE_ESCAPED}|${SUGGESTED_FIX_ESCAPED}|g" "${FILE_TO_FIX}"
           
           git config --global user.name "DevSecOps AI Bot 🤖"
           git config --global user.email "actions@github.com"
@@ -74,8 +79,8 @@ sed \-i "s\|</span>{VULNERABLE_CODE_ESCAPED}|<span class="math-inline">\{SUGGEST
           git push origin $BRANCH_NAME
 
           gh pr create \
-            --title "[BOT] Correção de Segurança Sugerida por IA para <span class="math-inline">\{RULE\_ID\}" \\
-\-\-body "Este PR foi gerado automaticamente pelo Agente de Remediação\.\\n\\nA IA analisou a vulnerabilidade \*\*</span>{RULE_ID}** e sugeriu a seguinte correção no arquivo \`${FILE_TO_FIX}\`:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE_RAW}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX_RAW}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
+            --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID}" \
+            --body "Este PR foi gerado automaticamente pelo Agente de Remediação.\n\nA IA analisou a vulnerabilidade **${RULE_ID}** e sugeriu a seguinte correção no arquivo \`${FILE_TO_FIX}\`:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE_RAW}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX_RAW}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
