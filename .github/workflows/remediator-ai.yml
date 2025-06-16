@@ -95,7 +95,8 @@ jobs:
           python3 ../replacer.py
 
           SANITIZED_RULE_ID=$(echo "$RULE_ID_VALUE" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
-          BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}"
+          # CORREÇÃO FINAL: Cria um nome de branch único para cada execução
+          BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}-${{ github.run_id }}"
           
           git checkout -b $BRANCH_NAME
           
@@ -109,6 +110,5 @@ jobs:
             --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID_VALUE}" \
             --body "Este PR foi gerado automaticamente pelo Agente de Remediação.\n\nA IA analisou a vulnerabilidade **${RULE_ID_VALUE}** e sugeriu a seguinte correção no arquivo \`${FILE_TO_FIX_VALUE}\`:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE_VALUE}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX_VALUE}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
         env:
-          # CORREÇÃO FINAL: Usa o PAT com permissões elevadas
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
