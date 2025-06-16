@@ -52,7 +52,6 @@ jobs:
       - name: 6. Aplicar Correção e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: |
-          # CORREÇÃO APLICADA AQUI: Atribui a URL a uma variável antes de usá-la.
           URL=${{ github.event.inputs.repo_url }}
           REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
           REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
@@ -64,10 +63,13 @@ jobs:
           SUGGESTED_FIX_ESCAPED=$(printf '%s\n' "$SUGGESTED_FIX_RAW" | sed 's:[][\\/.^$*]:\\&:g')
           RULE_ID=$(jq -r '.rule' remediation_plan.json)
 
+          # CORREÇÃO APLICADA AQUI: Limpa o nome da regra para ser um nome de branch válido
+          SANITIZED_RULE_ID=$(echo "$RULE_ID" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
+          BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}"
+
           git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
-
-          BRANCH_NAME="fix/ai-remediation-${RULE_ID}"
+          
           git checkout -b $BRANCH_NAME
 
           sed -i "s|${VULNERABLE_CODE_ESCAPED}|${SUGGESTED_FIX_ESCAPED}|g" "${FILE_TO_FIX}"
