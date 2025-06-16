@@ -1,4 +1,3 @@
-# test_app.py (versão final limpa)
 import unittest
 from app import app
 
