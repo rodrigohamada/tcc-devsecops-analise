@@ -1,23 +1,24 @@
 import json
 import os
 import sys
-import requests # Usando a biblioteca padrão 'requests' para chamadas de rede
+import requests
 
-# ==============================================================================
-# FUNÇÃO DE CHAMADA DA IA (usando a API do Gemini com a biblioteca 'requests')
-# ==============================================================================
 def ask_generative_ai(prompt):
-    """Função genérica para enviar um prompt para a IA e retornar a resposta."""
     print(f"🤖 Enviando prompt para a IA:\n---\n{prompt}\n---")
     
+    # CORREÇÃO: Lê a chave de API do ambiente do workflow
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("❌ Chave de API do Gemini não encontrada. Abortando.")
+        return None
+
     chatHistory = [{"role": "user", "parts": [{"text": prompt}]}]
     payload = {"contents": chatHistory}
-    apiKey = ""  # Deixe em branco para o ambiente do Canvas
-    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={apiKey}"
+    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
     
     try:
         response = requests.post(apiUrl, json=payload, headers={'Content-Type': 'application/json'})
-        response.raise_for_status() # Lança um erro se a resposta for um erro de HTTP
+        response.raise_for_status()
         result = response.json()
         
         if result.get("candidates"):
@@ -30,14 +31,9 @@ def ask_generative_ai(prompt):
         print(f"❌ Erro ao chamar a API da IA: {e}")
     return None
 
-# ==============================================================================
-# FUNÇÕES DE PROMPT ENGINEERING (O CORAÇÃO DA INTELIGÊNCIA)
-# ==============================================================================
+# O resto do arquivo permanece exatamente o mesmo
 def create_remediation_plan(finding):
-    """Cria um prompt específico baseado no tipo de vulnerabilidade."""
     file_path = finding['file']
-    
-    # Contexto de código apenas para SAST e Segredos
     code_snippet = "N/A"
     vulnerable_line = ""
     if finding['type'] in ['SAST', 'SECRET']:
@@ -72,9 +68,6 @@ def create_remediation_plan(finding):
     finding['prompt'] = prompt
     return finding
 
-# ==============================================================================
-# FUNÇÃO PRINCIPAL
-# ==============================================================================
 def main():
     try:
         with open("semgrep-output.json") as f: semgrep_data = json.load(f)
