@@ -63,7 +63,6 @@ def main():
     for r in gitleaks_data: all_findings.append({'type': 'SECRET', 'rule': r["Description"], 'severity': 'CRITICAL', 'file': r["File"], 'line': r["StartLine"]})
     if trivy_data.get("Results"):
         for res in trivy_data["Results"]:
-            # O nome do alvo pode incluir o subdiretório, então verificamos com 'in'
             if "requirements.txt" in res.get("Target", ""):
                 for v in res.get("Vulnerabilities", []): all_findings.append({'type': 'SCA', 'vuln_id': v.get("VulnerabilityID"), 'package': v.get("PkgName"), 'version': v.get("InstalledVersion"), 'severity': v.get("Severity"), 'file': res.get("Target"), 'line': -1})
 
@@ -82,7 +81,7 @@ def main():
         
         if file_path not in modified_files:
             try:
-                # O script sempre roda do root, então o caminho do arquivo alvo está sempre dentro de 'target_repo'
+                # O script agora sabe que precisa procurar dentro de 'target_repo'
                 with open(os.path.join("target_repo", file_path), 'r') as f:
                     modified_files[file_path] = f.read()
             except FileNotFoundError:
