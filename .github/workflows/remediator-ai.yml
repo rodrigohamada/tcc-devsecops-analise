@@ -6,43 +6,38 @@ on:
       repo_url:
         description: 'URL do repositório público a ser escaneado e corrigido'
         required: true
-        # Para testar, vamos usar o seu próprio repositório como padrão
-        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
+        default: '[https://github.com/rodrigohamada/tcc-devsecops-analise](https://github.com/rodrigohamada/tcc-devsecops-analise)'
 
 jobs:
   scan-and-remediate-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # Permissão para fazer commit e push
-      pull-requests: write # Permissão para criar Pull Requests
+      contents: write
+      pull-requests: write
     
     steps:
-      - name: 1. Extrair Nome do Repositório
-        id: get_repo_name
-        run: |
-          REPO_NAME=$(basename ${{ github.event.inputs.repo_url }} .git)
-          echo "repo_name=${REPO_NAME}" >> $GITHUB_OUTPUT
-
-      - name: 2. Checkout do código do Agente (para pegar os scripts)
+      - name: 1. Checkout do código do Agente
         uses: actions/checkout@v4
 
-      - name: 3. Instalar Ferramentas
+      - name: 2. Instalar Ferramentas
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip gitleaks jq
           sudo pipx install semgrep
+          # Instala a biblioteca 'requests' necessária para o script Python
+          pip install requests
 
-      - name: 4. Clonar Repositório Alvo
+      - name: 3. Clonar Repositório Alvo
         run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
       
-      - name: 5. Executar Scans de Segurança no Alvo
+      - name: 4. Executar Scans de Segurança no Alvo
         run: |
           cd target_repo
           semgrep scan --config auto --json --output ../semgrep-output.json || true
           gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
 
-      - name: 6. Executar IA para Gerar Plano de Correção
+      - name: 5. Executar IA para Gerar Plano de Correção
         id: remediation_step
         run: |
           python3 intelligent_remediator.py
@@ -52,40 +47,37 @@ jobs:
             echo "plan_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: 7. Aplicar Correção e Criar Pull Request
+      - name: 6. Aplicar Correção e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: |
-          # Carrega os detalhes do plano de correção usando jq (mais seguro)
+          REPO_OWNER=$(echo "${{ github.event.inputs.repo_url }}" | cut -d'/' -f4)
+          REPO_NAME=$(echo "${{ github.event.inputs.repo_url }}" | cut -d'/' -f5 | sed 's/\.git$//')
+          
           FILE_TO_FIX=$(jq -r '.file' remediation_plan.json)
-          # Para o comando sed, precisamos escapar caracteres especiais como /
           VULNERABLE_CODE_RAW=$(jq -r '.vulnerable_code' remediation_plan.json)
-          VULNERABLE_CODE_ESCAPED=$(sed 's/[&/\]/\\&/g' <<<"$VULNERABLE_CODE_RAW")
+          VULNERABLE_CODE_ESCAPED=$(printf '%s\n' "$VULNERABLE_CODE_RAW" | sed 's:[][\\/.^$*]:\\&:g')
           SUGGESTED_FIX_RAW=$(jq -r '.suggested_fix' remediation_plan.json)
-          SUGGESTED_FIX_ESCAPED=$(sed 's/[&/\]/\\&/g' <<<"$SUGGESTED_FIX_RAW")
+          SUGGESTED_FIX_ESCAPED=$(printf '%s\n' "$SUGGESTED_FIX_RAW" | sed 's:[][\\/.^$*]:\\&:g')
           RULE_ID=$(jq -r '.rule' remediation_plan.json)
 
-          # Clona o repositório alvo novamente para fazer a alteração
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} target_repo_pr
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@[github.com/$](https://github.com/$){REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
 
-          # Cria uma nova branch para a correção
           BRANCH_NAME="fix/ai-remediation-${RULE_ID}"
           git checkout -b $BRANCH_NAME
 
-          # Aplica a correção de forma segura
+          # Usando um delimitador diferente no sed para evitar conflitos com caminhos de arquivo
           sed -i "s|${VULNERABLE_CODE_ESCAPED}|${SUGGESTED_FIX_ESCAPED}|g" "${FILE_TO_FIX}"
           
-          # Faz o commit e push da correção
           git config --global user.name "DevSecOps AI Bot 🤖"
-          git config --global user.email "bot@github.actions"
+          git config --global user.email "actions@github.com"
           git add .
           git commit -m "fix(security): Correção automática por IA para ${RULE_ID}"
           git push origin $BRANCH_NAME
 
-          # Cria o Pull Request
           gh pr create \
             --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID}" \
-            --body "Este PR foi gerado automaticamente pelo Agente de Remediação.\n\nA IA analisou a vulnerabilidade **${RULE_ID}** e sugeriu a seguinte correção:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE_RAW}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX_RAW}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
+            --body "Este PR foi gerado automaticamente pelo Agente de Remediação.\n\nA IA analisou a vulnerabilidade **${RULE_ID}** e sugeriu a seguinte correção no arquivo \`${FILE_TO_FIX}\`:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE_RAW}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX_RAW}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
