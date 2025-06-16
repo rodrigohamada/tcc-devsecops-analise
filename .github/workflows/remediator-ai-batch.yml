@@ -27,40 +27,31 @@ jobs:
           echo "/opt/pipx_bin" >> $GITHUB_PATH
           pip install requests
 
-      - name: 3. Clonar Repositório Alvo e Criar Pasta de Relatórios
-        run: |
-          git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
-          mkdir -p reports
-
+      - name: 3. Clonar Repositório Alvo
+        run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
+      
       - name: 4. Executar Scans de Segurança
+        # CORREÇÃO: Todos os scans agora rodam a partir do diretório principal
+        # e salvam seus relatórios (.json) na raiz do workflow.
         run: |
-          # Executa os scans a partir do diretório principal, salvando os relatórios na pasta 'reports'
-          semgrep scan ./target_repo --config auto --json --output ./reports/semgrep-output.json || true
-          gitleaks detect -s ./target_repo -r ./reports/gitleaks-output.json || true
-          docker run --rm -v $(pwd)/target_repo:/scan-target aquasec/trivy:latest fs /scan-target --format json --output /scan-target/../reports/trivy-output.json || true
+          semgrep scan ./target_repo --config auto --json --output semgrep-output.json || true
+          gitleaks detect -s ./target_repo -r gitleaks-output.json --no-git || true
+          docker run --rm -v $(pwd)/target_repo:/scan-target aquasec/trivy:latest fs /scan-target --format json --output /scan-target/../trivy-output.json || true
 
       - name: 5. Executar IA para Gerar Plano de Correção
         id: remediation_step
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # Agora o script principal roda na pasta raiz, onde todos os relatórios estão
+          # Este script agora encontra os relatórios na pasta raiz sem problemas.
           python3 intelligent_batch_remediator.py
           if [ -f "batch_remediation_log.json" ] && [ $(wc -c < batch_remediation_log.json) -gt 5 ]; then
             echo "plan_exists=true" >> $GITHUB_OUTPUT
           else
             echo "plan_exists=false" >> $GITHUB_OUTPUT
           fi
-      
-      - name: 6. Ajustar caminhos no Log de Remediação
-        if: steps.remediation_step.outputs.plan_exists == 'true'
-        run: |
-          # Os scanners podem incluir o nome do diretório ('target_repo/') nos caminhos dos arquivos.
-          # Este passo remove esse prefixo para que os próximos passos funcionem corretamente.
-          temp_log=$(mktemp)
-          jq '(.[] | .file) |= sub("target_repo/"; "")' batch_remediation_log.json > "$temp_log" && mv "$temp_log" batch_remediation_log.json
 
-      - name: 7. Aplicar Correções e Criar Pull Request
+      - name: 6. Aplicar Correções e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: python3 apply_batch_fix.py
         env:
