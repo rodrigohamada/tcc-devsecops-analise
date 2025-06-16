@@ -6,7 +6,7 @@ on:
       repo_url:
         description: 'URL do repositório público a ser escaneado e corrigido'
         required: true
-        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
+        default: '[https://github.com/rodrigohamada/tcc-devsecops-analise](https://github.com/rodrigohamada/tcc-devsecops-analise)'
 
 jobs:
   scan-and-remediate-bot:
@@ -19,7 +19,7 @@ jobs:
       - name: 1. Checkout do código do Agente
         uses: actions/checkout@v4
 
-      - name: 2. Instalar Ferramentas
+      - name: 2. Instalar Ferramentas e Configurar PATH
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip gitleaks jq pandoc texlive-latex-extra
@@ -58,12 +58,12 @@ jobs:
       - name: 7. Aplicar Correção e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: |
-          # Cria o script Python para substituição segura
           cat << 'EOF' > replacer.py
           import os, sys
           file_path = os.getenv("FILE_TO_FIX")
           vulnerable_code = os.getenv("VULNERABLE_CODE")
           suggested_fix = os.getenv("SUGGESTED_FIX")
+          if not all([file_path, vulnerable_code, suggested_fix]): sys.exit(1)
           try:
               with open(file_path, 'r', encoding='utf-8') as file: content = file.read()
               new_content = content.replace(vulnerable_code, suggested_fix)
@@ -73,61 +73,51 @@ jobs:
               print(f"Erro: {e}"); sys.exit(1)
           EOF
 
-          # Carrega os detalhes do plano
           FILE_TO_FIX_VALUE=$(jq -r '.file' remediation_plan.json)
           VULNERABLE_CODE_VALUE=$(jq -r '.vulnerable_code' remediation_plan.json)
           SUGGESTED_FIX_VALUE=$(jq -r '.suggested_fix' remediation_plan.json)
           RULE_ID_VALUE=$(jq -r '.rule' remediation_plan.json)
-
-          # Clona o repo e aplica a correção
+          
           URL=${{ github.event.inputs.repo_url }}
           REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
           REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
-          git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
+          git clone https://x-access-token:${{ secrets.GH_PAT }}@[github.com/$](https://github.com/$){REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
-
+          
           export FILE_TO_FIX="$FILE_TO_FIX_VALUE"
           export VULNERABLE_CODE="$VULNERABLE_CODE_VALUE"
           export SUGGESTED_FIX="$SUGGESTED_FIX_VALUE"
           python3 ../replacer.py
-
-          # Cria a branch, faz o commit e o push
+          
           SANITIZED_RULE_ID=$(echo "$RULE_ID_VALUE" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
           BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}-${{ github.run_id }}"
           git checkout -b $BRANCH_NAME
+          
           git config --global user.name "DevSecOps AI Bot 🤖"
           git config --global user.email "actions@github.com"
           git add .
           git commit -m "fix(security): Correção automática por IA para ${RULE_ID_VALUE}"
           git push origin $BRANCH_NAME
-
-          # Define o corpo do PR em uma variável multiline
+          
           PR_BODY=$(cat <<EOM
 ### 🤖 Remediação Automática por IA
-
 Este Pull Request foi gerado automaticamente pelo Agente de Segurança para corrigir uma vulnerabilidade detectada.
-
 **Vulnerabilidade:** ${RULE_ID_VALUE}
 **Arquivo Afetado:** \`${FILE_TO_FIX_VALUE}\`
-
 ---
 #### Código Vulnerável Identificado
 \`\`\`
 ${VULNERABLE_CODE_VALUE}
 \`\`\`
-
 #### Correção Sugerida pela IA
 \`\`\`
 ${SUGGESTED_FIX_VALUE}
 \`\`\`
 ---
-
 **Ação Necessária:** Por favor, revise a alteração, execute os testes necessários e aprove este Pull Request para integrar a correção.
-
 *Um relatório detalhado em PDF desta ação está disponível nos artefatos desta execução do workflow.*
 EOM
 )
-          # Cria o Pull Request com o corpo formatado
           gh pr create \
             --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID_VALUE}" \
             --body "$PR_BODY"
