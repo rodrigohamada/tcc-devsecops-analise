@@ -6,7 +6,6 @@ on:
       repo_url:
         description: 'URL do repositório público a ser escaneado e corrigido'
         required: true
-        # CORREÇÃO: Removida a formatação de link Markdown
         default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
@@ -23,7 +22,7 @@ jobs:
       - name: 2. Instalar Ferramentas e Configurar PATH
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip gitleaks jq pandoc texlive-latex-extra
+          sudo apt-get install -y python3-pip gitleaks jq
           sudo pipx install semgrep
           echo "/opt/pipx_bin" >> $GITHUB_PATH
           pip install requests
@@ -31,7 +30,7 @@ jobs:
       - name: 3. Clonar Repositório Alvo
         run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
       
-      - name: 4. Executar Scans de Segurança
+      - name: 4. Executar Scans de Segurança no Alvo
         run: |
           cd target_repo
           semgrep scan --config auto --json --output ../semgrep-output.json || true
@@ -50,15 +49,10 @@ jobs:
             echo "plan_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: 6. Gerar Relatório de Remediação (MD e PDF)
+      - name: 6. Aplicar Correção e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: |
-          python3 remediation_report.py "${{ github.event.inputs.repo_url }}"
-          pandoc remediation-report.md -o remediation-report.pdf
-
-      - name: 7. Aplicar Correção e Criar Pull Request
-        if: steps.remediation_step.outputs.plan_exists == 'true'
-        run: |
+          # Cria um script Python para fazer a substituição de forma segura
           cat << 'EOF' > replacer.py
           import os, sys
           file_path = os.getenv("FILE_TO_FIX")
@@ -69,20 +63,21 @@ jobs:
               with open(file_path, 'r', encoding='utf-8') as file: content = file.read()
               new_content = content.replace(vulnerable_code, suggested_fix)
               with open(file_path, 'w', encoding='utf-8') as file: file.write(new_content)
-              print(f"Arquivo {file_path} atualizado.")
+              print(f"Arquivo {file_path} atualizado com sucesso.")
           except Exception as e:
-              print(f"Erro: {e}"); sys.exit(1)
+              print(f"Erro ao atualizar o arquivo: {e}"); sys.exit(1)
           EOF
 
+          # Carrega os detalhes do plano
           FILE_TO_FIX_VALUE=$(jq -r '.file' remediation_plan.json)
           VULNERABLE_CODE_VALUE=$(jq -r '.vulnerable_code' remediation_plan.json)
           SUGGESTED_FIX_VALUE=$(jq -r '.suggested_fix' remediation_plan.json)
           RULE_ID_VALUE=$(jq -r '.rule' remediation_plan.json)
-          
+
+          # Clona o repositório e aplica a correção
           URL=${{ github.event.inputs.repo_url }}
           REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
           REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
-          # CORREÇÃO: Sintaxe do git clone corrigida
           git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
           
@@ -91,49 +86,40 @@ jobs:
           export SUGGESTED_FIX="$SUGGESTED_FIX_VALUE"
           python3 ../replacer.py
           
+          # Cria e faz push da nova branch
           SANITIZED_RULE_ID=$(echo "$RULE_ID_VALUE" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
           BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}-${{ github.run_id }}"
           git checkout -b $BRANCH_NAME
-          
           git config --global user.name "DevSecOps AI Bot 🤖"
           git config --global user.email "actions@github.com"
           git add .
           git commit -m "fix(security): Correção automática por IA para ${RULE_ID_VALUE}"
           git push origin $BRANCH_NAME
+
+          # Prepara o corpo do Pull Request em um arquivo separado
+          PR_BODY_FILE="../pr_body.md"
+          cat << EOM > $PR_BODY_FILE
+          ### 🤖 Remediação Automática por IA
+          Este Pull Request foi gerado automaticamente pelo Agente de Segurança para corrigir uma vulnerabilidade detectada.
+          **Vulnerabilidade:** ${RULE_ID_VALUE}
+          **Arquivo Afetado:** \`${FILE_TO_FIX_VALUE}\`
+          ---
+          #### Código Vulnerável Identificado
+          \`\`\`
+          ${VULNERABLE_CODE_VALUE}
+          \`\`\`
+          #### Correção Sugerida pela IA
+          \`\`\`
+          ${SUGGESTED_FIX_VALUE}
+          \`\`\`
+          ---
+          **Ação Necessária:** Por favor, revise a alteração, execute os testes necessários e aprove este Pull Request.
+          EOM
           
-          # CORREÇÃO: Cria o corpo do PR em um arquivo temporário para robustez
-          BODY_FILE=$(mktemp)
-          cat << EOM > $BODY_FILE
-### 🤖 Remediação Automática por IA
-Este Pull Request foi gerado automaticamente pelo Agente de Segurança para corrigir uma vulnerabilidade detectada.
-**Vulnerabilidade:** ${RULE_ID_VALUE}
-**Arquivo Afetado:** \`${FILE_TO_FIX_VALUE}\`
----
-#### Código Vulnerável Identificado
-\`\`\`
-${VULNERABLE_CODE_VALUE}
-\`\`\`
-#### Correção Sugerida pela IA
-\`\`\`
-${SUGGESTED_FIX_VALUE}
-\`\`\`
----
-**Ação Necessária:** Por favor, revise a alteração, execute os testes necessários e aprove este Pull Request para integrar a correção.
-*Um relatório detalhado em PDF desta ação está disponível nos artefatos desta execução do workflow.*
-EOM
+          # Cria o Pull Request lendo o corpo do arquivo
           gh pr create \
             --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID_VALUE}" \
-            --body-file "$BODY_FILE"
+            --body-file "$PR_BODY_FILE"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
-
-      - name: 8. Upload do Relatório de Remediação
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Relatorio-de-Remediacao-${{ github.run_id }}
-          path: |
-            remediation-report.md
-            remediation-report.pdf
-          retention-days: 7
