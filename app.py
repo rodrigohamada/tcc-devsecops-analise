@@ -6,7 +6,11 @@ import os
 app = Flask(__name__)
 
 # VULNERABILIDADE 2: Segredo hardcoded no código.
-API_KEY = "sk-live-12345abcdefg67890hijklmn12345"
+import os
+
+API_KEY = os.getenv("API_KEY_SECRET")
+
+# ... resto do código ...
 
 # Função para inicializar o banco de dados
 def init_db():
