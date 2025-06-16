@@ -6,7 +6,7 @@ on:
       repo_url:
         description: 'URL do repositório público a ser escaneado e corrigido'
         required: true
-        default: '[https://github.com/rodrigohamada/tcc-devsecops-analise](https://github.com/rodrigohamada/tcc-devsecops-analise)'
+        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
   scan-and-remediate-bot:
@@ -19,20 +19,23 @@ jobs:
       - name: 1. Checkout do código do Agente
         uses: actions/checkout@v4
 
-      - name: 2. Instalar Ferramentas
+      - name: 2. Instalar Ferramentas e Configurar PATH
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip gitleaks jq
           sudo pipx install semgrep
-          # Instala a biblioteca 'requests' necessária para o script Python
+          # CORREÇÃO: Adiciona o diretório de binários do pipx ao PATH do workflow
+          echo "/opt/pipx_bin" >> $GITHUB_PATH
           pip install requests
 
       - name: 3. Clonar Repositório Alvo
+        # CORREÇÃO: Comando git clone sem formatação Markdown
         run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
       
       - name: 4. Executar Scans de Segurança no Alvo
         run: |
           cd target_repo
+          # O '|| true' no final garante que o workflow continue mesmo se um scanner falhar
           semgrep scan --config auto --json --output ../semgrep-output.json || true
           gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
@@ -60,13 +63,12 @@ jobs:
           SUGGESTED_FIX_ESCAPED=$(printf '%s\n' "$SUGGESTED_FIX_RAW" | sed 's:[][\\/.^$*]:\\&:g')
           RULE_ID=$(jq -r '.rule' remediation_plan.json)
 
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@[github.com/$](https://github.com/$){REPO_OWNER}/${REPO_NAME}.git target_repo_pr
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
 
           BRANCH_NAME="fix/ai-remediation-${RULE_ID}"
           git checkout -b $BRANCH_NAME
 
-          # Usando um delimitador diferente no sed para evitar conflitos com caminhos de arquivo
           sed -i "s|${VULNERABLE_CODE_ESCAPED}|${SUGGESTED_FIX_ESCAPED}|g" "${FILE_TO_FIX}"
           
           git config --global user.name "DevSecOps AI Bot 🤖"
