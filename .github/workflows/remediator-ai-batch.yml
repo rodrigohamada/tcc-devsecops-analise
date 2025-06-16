@@ -31,20 +31,21 @@ jobs:
         run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
       
       - name: 4. Executar Scans de Segurança
+        # CORREÇÃO: Define o diretório de trabalho para os scans
+        working-directory: ./target_repo
         run: |
-          cd target_repo
           semgrep scan --config auto --json --output ../semgrep-output.json || true
           gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
 
-      - name: 5. Executar IA para Gerar Plano de Correção em Lote
+      - name: 5. Executar IA para Gerar Plano de Correção
         id: remediation_step
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # CORREÇÃO: Usa o caminho relativo para encontrar o script
-          python3 ../intelligent_batch_remediator.py
-          if [ -f "batch_remediation_log.json" ] && [ $(jq 'length' batch_remediation_log.json) -gt 0 ]; then
+          # Este script agora roda do diretório principal, onde ele existe
+          python3 intelligent_batch_remediator.py
+          if [ -f "batch_remediation_log.json" ] && [ $(wc -c < batch_remediation_log.json) -gt 5 ]; then
             echo "plan_exists=true" >> $GITHUB_OUTPUT
           else
             echo "plan_exists=false" >> $GITHUB_OUTPUT
