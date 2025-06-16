@@ -6,7 +6,8 @@ on:
       repo_url:
         description: 'URL do repositório público a ser escaneado e corrigido'
         required: true
-        default: '[https://github.com/rodrigohamada/tcc-devsecops-analise](https://github.com/rodrigohamada/tcc-devsecops-analise)'
+        # CORREÇÃO: Removida a formatação de link Markdown
+        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
   scan-and-remediate-bot:
@@ -81,7 +82,8 @@ jobs:
           URL=${{ github.event.inputs.repo_url }}
           REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
           REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
-          git clone https://x-access-token:${{ secrets.GH_PAT }}@[github.com/$](https://github.com/$){REPO_OWNER}/${REPO_NAME}.git target_repo_pr
+          # CORREÇÃO: Sintaxe do git clone corrigida
+          git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
           
           export FILE_TO_FIX="$FILE_TO_FIX_VALUE"
@@ -99,7 +101,9 @@ jobs:
           git commit -m "fix(security): Correção automática por IA para ${RULE_ID_VALUE}"
           git push origin $BRANCH_NAME
           
-          PR_BODY=$(cat <<EOM
+          # CORREÇÃO: Cria o corpo do PR em um arquivo temporário para robustez
+          BODY_FILE=$(mktemp)
+          cat << EOM > $BODY_FILE
 ### 🤖 Remediação Automática por IA
 Este Pull Request foi gerado automaticamente pelo Agente de Segurança para corrigir uma vulnerabilidade detectada.
 **Vulnerabilidade:** ${RULE_ID_VALUE}
@@ -117,10 +121,9 @@ ${SUGGESTED_FIX_VALUE}
 **Ação Necessária:** Por favor, revise a alteração, execute os testes necessários e aprove este Pull Request para integrar a correção.
 *Um relatório detalhado em PDF desta ação está disponível nos artefatos desta execução do workflow.*
 EOM
-)
           gh pr create \
             --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID_VALUE}" \
-            --body "$PR_BODY"
+            --body-file "$BODY_FILE"
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
