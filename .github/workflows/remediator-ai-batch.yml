@@ -1,0 +1,97 @@
+name: Agente de Remediação em Lote com IA
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: 'URL do repositório a ser escaneado e corrigido'
+        required: true
+        default: '[https://github.com/rodrigohamada/tcc-devsecops-analise](https://github.com/rodrigohamada/tcc-devsecops-analise)'
+
+jobs:
+  batch-remediate-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: 1. Checkout do código do Agente
+        uses: actions/checkout@v4
+
+      - name: 2. Instalar Ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip gitleaks jq
+          sudo pipx install semgrep
+          echo "/opt/pipx_bin" >> $GITHUB_PATH
+          pip install requests
+
+      - name: 3. Clonar Repositório Alvo
+        run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
+      
+      - name: 4. Executar Scans de Segurança
+        run: |
+          cd target_repo
+          semgrep scan --config auto --json --output ../semgrep-output.json || true
+          gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
+          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
+
+      - name: 5. Executar IA para Gerar Plano de Correção em Lote
+        id: remediation_step
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python3 intelligent_batch_remediator.py
+          if [ -f "batch_remediation_log.json" ] && [ $(jq 'length' batch_remediation_log.json) -gt 0 ]; then
+            echo "plan_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "plan_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 6. Aplicar Correções e Criar Pull Request
+        if: steps.remediation_step.outputs.plan_exists == 'true'
+        run: |
+          URL=${{ github.event.inputs.repo_url }}
+          REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
+          REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
+          
+          git clone https://x-access-token:${{ secrets.GH_PAT }}@[github.com/$](https://github.com/$){REPO_OWNER}/${REPO_NAME}.git target_repo_pr
+          cd target_repo_pr
+          
+          # Loop para aplicar cada correção do log JSON
+          jq -cr '.[]' ../batch_remediation_log.json | while read -r item; do
+            FILE_TO_FIX=$(echo "$item" | jq -r '.file')
+            VULNERABLE_CODE=$(echo "$item" | jq -r '.vulnerable_code')
+            SUGGESTED_FIX=$(echo "$item" | jq -r '.suggested_fix')
+            
+            # Script Python para fazer a substituição de forma segura
+            python3 -c "
+import sys
+file_path = '''${FILE_TO_FIX}'''
+vulnerable_code = '''${VULNERABLE_CODE}'''
+suggested_fix = '''${SUGGESTED_FIX}'''
+with open(file_path, 'r', encoding='utf-8') as file: content = file.read()
+new_content = content.replace(vulnerable_code, suggested_fix)
+with open(file_path, 'w', encoding='utf-8') as file: file.write(new_content)
+"
+          done
+          
+          BRANCH_NAME="fix/ai-batch-remediation-${{ github.run_id }}"
+          git checkout -b $BRANCH_NAME
+          git config --global user.name "DevSecOps AI Bot 🤖"
+          git config --global user.email "actions@github.com"
+          git add .
+          git commit -m "fix(security): Correções automáticas em lote por IA"
+          git push origin $BRANCH_NAME
+          
+          # Cria o corpo do PR a partir do log
+          PR_BODY="### 🤖 Remediação Automática em Lote por IA\n\nEste PR contém as seguintes correções sugeridas pela IA:\n\n"
+          PR_BODY+=$(jq -r '.[] | "- **" + .rule + "** no arquivo `" + .file + "`\n"' ../batch_remediation_log.json)
+          
+          gh pr create \
+            --title "[BOT] Correção em Lote Sugerida por IA" \
+            --body "$PR_BODY"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
