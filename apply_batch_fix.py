@@ -30,9 +30,10 @@ def apply_fixes_and_create_pr():
     gh_pat = os.getenv("GH_PAT")
     run_id = os.getenv("RUN_ID")
     
-    repo_owner = repo_url.split('/')[-2]
-    repo_name = repo_url.split('/')[-1].replace('.git', '')
-    clone_url = f"https://x-access-token:{gh_pat}@[github.com/](https://github.com/){repo_owner}/{repo_name}.git"
+    # CORREÇÃO: Constrói a URL de clone de forma robusta, substituindo o "https://"
+    # Isso evita qualquer erro de formatação ou caracteres inesperados.
+    auth_string = f"x-access-token:{gh_pat}@"
+    clone_url = repo_url.replace("https://", f"https://{auth_string}")
     
     target_dir = "target_repo_pr"
     run_command(["git", "clone", clone_url, target_dir])
