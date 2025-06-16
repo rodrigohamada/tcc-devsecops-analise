@@ -28,7 +28,6 @@ def init_db():
 @app.route('/')
 def home():
     name = request.args.get('name', 'Visitante')
-    # CORREÇÃO APLICADA AQUI: "Olá" foi trocado por "Ola"
     return f'<h1>Ola, {name}!</h1><p>API Key usada (exemplo): {API_KEY}</p>'
 
 @app.route('/user/<username>')
