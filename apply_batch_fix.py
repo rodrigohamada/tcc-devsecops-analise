@@ -1,3 +1,4 @@
+# apply_batch_fix.py
 import json
 import os
 import subprocess
@@ -30,8 +31,7 @@ def apply_fixes_and_create_pr():
     gh_pat = os.getenv("GH_PAT")
     run_id = os.getenv("RUN_ID")
     
-    # CORREÇÃO: Constrói a URL de clone de forma robusta, substituindo o "https://"
-    # Isso evita qualquer erro de formatação ou caracteres inesperados.
+    # Constrói a URL de clone de forma robusta
     auth_string = f"x-access-token:{gh_pat}@"
     clone_url = repo_url.replace("https://", f"https://{auth_string}")
     
@@ -67,13 +67,15 @@ def apply_fixes_and_create_pr():
         pr_body += f"- **{fix['rule']}** no arquivo `{fix['file']}`\n"
     pr_body += "\n**Ação Necessária:** Por favor, revise, teste e aprove este Pull Request."
 
+    # Salva o corpo do PR no diretório principal
     with open("pr_body.md", "w") as f:
         f.write(pr_body)
 
+    # CORREÇÃO FINAL: Aponta para o caminho correto do arquivo de corpo do PR
     run_command([
         "gh", "pr", "create",
         "--title", "[BOT] Correção em Lote Sugerida por IA",
-        "--body-file", "pr_body.md",
+        "--body-file", "../pr_body.md", # Usa ../ para subir um nível de diretório
         "--base", "main",
         "--head", branch_name
     ], working_dir=target_dir)
