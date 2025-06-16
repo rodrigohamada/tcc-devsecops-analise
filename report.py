@@ -8,8 +8,6 @@ def process_semgrep(data):
     results = data.get("results", [])
     findings = []
     for r in results:
-        # CORREÇÃO APLICADA AQUI: Adiciona um "espaço de quebra invisível" (\u200B)
-        # após cada ponto na descrição da regra. Isso permite a quebra de linha.
         rule_id_wrappable = r["check_id"].replace(".", ".\u200B")
         
         findings.append({
