@@ -35,9 +35,13 @@ jobs:
           # Executa os scans a partir do diretório principal, salvando os relatórios na raiz
           semgrep scan ./target_repo --config auto --json --output semgrep-output.json || true
           gitleaks detect -s ./target_repo -r gitleaks-output.json --no-git || true
-          docker run --rm -v $(pwd)/target_repo:/scan-target aquasec/trivy:latest fs /scan-target --format json --output /scan-target/../trivy-output.json || true
+          
+          # CORREÇÃO: Mapeia o diretório de trabalho atual para /workspace dentro do contêiner.
+          # O Trivy escaneia a subpasta /workspace/target_repo e salva o relatório em /workspace/trivy-output.json,
+          # que corresponde à raiz do nosso workflow.
+          docker run --rm -v $(pwd):/workspace aquasec/trivy:latest fs /workspace/target_repo --format json --output /workspace/trivy-output.json || true
 
-      - name: 5. Executar IA para Gerar Plano de Correção em Lote
+      - name: 5. Executar IA para Gerar Plano de Correção
         id: remediation_step
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
