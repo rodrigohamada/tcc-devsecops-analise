@@ -52,27 +52,50 @@ jobs:
       - name: 6. Aplicar Correção e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: |
+          # Carrega os detalhes do plano de correção
+          FILE_TO_FIX=$(jq -r '.file' remediation_plan.json)
+          VULNERABLE_CODE_RAW=$(jq -r '.vulnerable_code' remediation_plan.json)
+          SUGGESTED_FIX_RAW=$(jq -r '.suggested_fix' remediation_plan.json)
+          RULE_ID=$(jq -r '.rule' remediation_plan.json)
+
+          # Cria um script Python para fazer a substituição de forma segura, evitando problemas com 'sed'
+          cat << EOF > replacer.py
+          import sys
+
+          file_path = "${FILE_TO_FIX}"
+          # Usa aspas triplas para lidar com múltiplas linhas
+          vulnerable_code = """${VULNERABLE_CODE_RAW}"""
+          suggested_fix = """${SUGGESTED_FIX_RAW}"""
+
+          try:
+              with open(file_path, 'r', encoding='utf-8') as file:
+                  content = file.read()
+              
+              new_content = content.replace(vulnerable_code, suggested_fix)
+              
+              with open(file_path, 'w', encoding='utf-8') as file:
+                  file.write(new_content)
+              print(f"Arquivo {file_path} atualizado com sucesso.")
+          except Exception as e:
+              print(f"Erro ao atualizar o arquivo: {e}")
+              sys.exit(1)
+          EOF
+
+          # Clona o repositório alvo para fazer a alteração
           URL=${{ github.event.inputs.repo_url }}
           REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
           REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
-          
-          FILE_TO_FIX=$(jq -r '.file' remediation_plan.json)
-          VULNERABLE_CODE_RAW=$(jq -r '.vulnerable_code' remediation_plan.json)
-          VULNERABLE_CODE_ESCAPED=$(printf '%s\n' "$VULNERABLE_CODE_RAW" | sed 's:[][\\/.^$*]:\\&:g')
-          SUGGESTED_FIX_RAW=$(jq -r '.suggested_fix' remediation_plan.json)
-          SUGGESTED_FIX_ESCAPED=$(printf '%s\n' "$SUGGESTED_FIX_RAW" | sed 's:[][\\/.^$*]:\\&:g')
-          RULE_ID=$(jq -r '.rule' remediation_plan.json)
-
-          # CORREÇÃO APLICADA AQUI: Limpa o nome da regra para ser um nome de branch válido
-          SANITIZED_RULE_ID=$(echo "$RULE_ID" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
-          BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}"
-
           git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
+
+          # Executa o script Python para aplicar a correção no arquivo clonado
+          python3 ../replacer.py "${FILE_TO_FIX}"
+          
+          # Continua com a criação da branch e do PR
+          SANITIZED_RULE_ID=$(echo "$RULE_ID" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
+          BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}"
           
           git checkout -b $BRANCH_NAME
-
-          sed -i "s|${VULNERABLE_CODE_ESCAPED}|${SUGGESTED_FIX_ESCAPED}|g" "${FILE_TO_FIX}"
           
           git config --global user.name "DevSecOps AI Bot 🤖"
           git config --global user.email "actions@github.com"
