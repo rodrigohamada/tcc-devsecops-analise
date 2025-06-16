@@ -1,3 +1,4 @@
+# intelligent_batch_remediator.py
 import json
 import os
 import sys
@@ -59,12 +60,17 @@ def main():
         return
 
     all_findings = []
-    for r in semgrep_data.get("results", []): all_findings.append({'type': 'SAST', 'rule': r["check_id"], 'severity': r["extra"]["severity"], 'file': r["path"], 'line': r["start"]["line"]})
-    for r in gitleaks_data: all_findings.append({'type': 'SECRET', 'rule': r["Description"], 'severity': 'CRITICAL', 'file': r["File"], 'line': r["StartLine"]})
+    # Unifica os achados, garantindo que o caminho do arquivo seja relativo ao repositório alvo
+    for r in semgrep_data.get("results", []):
+        all_findings.append({'type': 'SAST', 'rule': r["check_id"], 'severity': r["extra"]["severity"], 'file': r["path"], 'line': r["start"]["line"]})
+    for r in gitleaks_data:
+        all_findings.append({'type': 'SECRET', 'rule': r["Description"], 'severity': 'CRITICAL', 'file': r["File"], 'line': r["StartLine"]})
     if trivy_data.get("Results"):
         for res in trivy_data["Results"]:
             if "requirements.txt" in res.get("Target", ""):
-                for v in res.get("Vulnerabilities", []): all_findings.append({'type': 'SCA', 'vuln_id': v.get("VulnerabilityID"), 'package': v.get("PkgName"), 'version': v.get("InstalledVersion"), 'severity': v.get("Severity"), 'file': res.get("Target"), 'line': -1})
+                for v in res.get("Vulnerabilities", []):
+                    # O arquivo aqui é 'requirements.txt', não o caminho completo
+                    all_findings.append({'type': 'SCA', 'vuln_id': v.get("VulnerabilityID"), 'package': v.get("PkgName"), 'version': v.get("InstalledVersion"), 'severity': v.get("Severity"), 'file': 'requirements.txt', 'line': -1})
 
     critical_findings = [f for f in all_findings if f.get('severity') in ['CRITICAL', 'HIGH']]
     if not critical_findings:
@@ -81,7 +87,6 @@ def main():
         
         if file_path not in modified_files:
             try:
-                # O script agora sabe que precisa procurar dentro de 'target_repo'
                 with open(os.path.join("target_repo", file_path), 'r') as f:
                     modified_files[file_path] = f.read()
             except FileNotFoundError:
