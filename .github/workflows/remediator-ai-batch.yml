@@ -31,19 +31,17 @@ jobs:
         run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
       
       - name: 4. Executar Scans de Segurança
-        # CORREÇÃO: Todos os scans agora rodam a partir do diretório principal
-        # e salvam seus relatórios (.json) na raiz do workflow.
         run: |
+          # Executa os scans a partir do diretório principal, salvando os relatórios na raiz
           semgrep scan ./target_repo --config auto --json --output semgrep-output.json || true
           gitleaks detect -s ./target_repo -r gitleaks-output.json --no-git || true
           docker run --rm -v $(pwd)/target_repo:/scan-target aquasec/trivy:latest fs /scan-target --format json --output /scan-target/../trivy-output.json || true
 
-      - name: 5. Executar IA para Gerar Plano de Correção
+      - name: 5. Executar IA para Gerar Plano de Correção em Lote
         id: remediation_step
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # Este script agora encontra os relatórios na pasta raiz sem problemas.
           python3 intelligent_batch_remediator.py
           if [ -f "batch_remediation_log.json" ] && [ $(wc -c < batch_remediation_log.json) -gt 5 ]; then
             echo "plan_exists=true" >> $GITHUB_OUTPUT
