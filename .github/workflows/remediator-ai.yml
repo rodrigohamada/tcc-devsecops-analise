@@ -1,0 +1,84 @@
+# remediator-ai.yml
+name: Agente de Remediação com IA
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: 'URL do repositório público a ser escaneado e corrigido'
+        required: true
+        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
+
+jobs:
+  scan-and-remediate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Permissão para fazer commit e push
+      pull-requests: write # Permissão para criar Pull Requests
+    
+    steps:
+      - name: 1. Checkout do código do Agente (para pegar os scripts)
+        uses: actions/checkout@v4
+
+      - name: 2. Instalar Ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip gitleaks
+          sudo pipx install semgrep
+
+      - name: 3. Clonar Repositório Alvo
+        run: git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
+      
+      - name: 4. Executar Scans de Segurança no Alvo
+        run: |
+          cd target_repo
+          semgrep scan --config auto --json --output ../semgrep-output.json
+          gitleaks detect --report-format json --report-path ../gitleaks-output.json
+          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target
+
+      - name: 5. Executar IA para Gerar Plano de Correção
+        id: remediation_step
+        run: |
+          # Executa o script que analisa os JSONs e gera o plano de correção
+          python3 intelligent_remediator.py
+          # Verifica se o plano foi criado para a próxima etapa saber se deve rodar
+          if [ -f "remediation_plan.json" ]; then
+            echo "plan_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "plan_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 6. Aplicar Correção e Criar Pull Request
+        if: steps.remediation_step.outputs.plan_exists == 'true'
+        run: |
+          # Clona o repositório alvo novamente, desta vez com token para poder fazer push
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/${{ steps.remediation_step.outputs.repo_name }} target_repo_pr
+          cd target_repo_pr
+
+          # Carrega os detalhes do plano de correção
+          FILE_TO_FIX=$(jq -r '.file' ../remediation_plan.json)
+          VULNERABLE_CODE=$(jq -r '.vulnerable_code' ../remediation_plan.json)
+          SUGGESTED_FIX=$(jq -r '.suggested_fix' ../remediation_plan.json)
+          RULE_ID=$(jq -r '.rule' ../remediation_plan.json)
+
+          # Cria uma nova branch para a correção
+          BRANCH_NAME="fix/ai-remediation-${RULE_ID//./-}"
+          git checkout -b $BRANCH_NAME
+
+          # Aplica a correção (substitui a linha vulnerável pela sugestão da IA)
+          sed -i "s|${VULNERABLE_CODE}|${SUGGESTED_FIX}|g" "${FILE_TO_FIX}"
+          
+          # Faz o commit e push da correção
+          git config --global user.name "DevSecOps AI Bot 🤖"
+          git config --global user.email "bot@github.actions"
+          git add .
+          git commit -m "fix(security): Correção automática por IA para ${RULE_ID}"
+          git push origin $BRANCH_NAME
+
+          # Cria o Pull Request
+          gh pr create \
+            --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID}" \
+            --body "Este PR foi gerado automaticamente pelo Agente de Remediação.\n\nA IA analisou a vulnerabilidade **${RULE_ID}** e sugeriu a seguinte correção:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh cli usa essa variável
