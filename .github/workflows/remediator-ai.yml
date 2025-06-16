@@ -52,7 +52,6 @@ jobs:
       - name: 6. Aplicar Correção e Criar Pull Request
         if: steps.remediation_step.outputs.plan_exists == 'true'
         run: |
-          # Cria um script Python que lê os dados de variáveis de ambiente
           cat << 'EOF' > replacer.py
           import os
           import sys
@@ -79,26 +78,22 @@ jobs:
               sys.exit(1)
           EOF
 
-          # Carrega os detalhes do plano de correção do JSON
           FILE_TO_FIX_VALUE=$(jq -r '.file' remediation_plan.json)
           VULNERABLE_CODE_VALUE=$(jq -r '.vulnerable_code' remediation_plan.json)
           SUGGESTED_FIX_VALUE=$(jq -r '.suggested_fix' remediation_plan.json)
           RULE_ID_VALUE=$(jq -r '.rule' remediation_plan.json)
 
-          # Clona o repositório alvo
           URL=${{ github.event.inputs.repo_url }}
           REPO_OWNER=$(echo "$URL" | cut -d'/' -f4)
           REPO_NAME=$(echo "$URL" | cut -d'/' -f5 | sed 's/\.git$//')
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
+          git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/${REPO_OWNER}/${REPO_NAME}.git target_repo_pr
           cd target_repo_pr
 
-          # Executa o script Python, passando os dados como variáveis de ambiente
           export FILE_TO_FIX="$FILE_TO_FIX_VALUE"
           export VULNERABLE_CODE="$VULNERABLE_CODE_VALUE"
           export SUGGESTED_FIX="$SUGGESTED_FIX_VALUE"
           python3 ../replacer.py
 
-          # Continua com a criação da branch e do PR
           SANITIZED_RULE_ID=$(echo "$RULE_ID_VALUE" | tr -s '[:punct:][:space:]' '-' | tr -s '-' | sed 's/^-//;s/-$//')
           BRANCH_NAME="fix/ai-remediation-${SANITIZED_RULE_ID}"
           
@@ -114,5 +109,6 @@ jobs:
             --title "[BOT] Correção de Segurança Sugerida por IA para ${RULE_ID_VALUE}" \
             --body "Este PR foi gerado automaticamente pelo Agente de Remediação.\n\nA IA analisou a vulnerabilidade **${RULE_ID_VALUE}** e sugeriu a seguinte correção no arquivo \`${FILE_TO_FIX_VALUE}\`:\n\n**Substituir:**\n\`\`\`\n${VULNERABLE_CODE_VALUE}\n\`\`\`\n\n**Por:**\n\`\`\`\n${SUGGESTED_FIX_VALUE}\n\`\`\`\n\nPor favor, revise, teste e aprove a alteração."
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CORREÇÃO FINAL: Usa o PAT com permissões elevadas
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
