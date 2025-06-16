@@ -3,8 +3,8 @@ import os
 import sys
 import requests
 
-# Função para chamar a IA (sem alterações)
 def ask_generative_ai(prompt):
+    """Envia um prompt para a IA e retorna a resposta."""
     print(f"🤖 Enviando prompt para a IA:\n---\n{prompt}\n---")
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -29,8 +29,8 @@ def ask_generative_ai(prompt):
         print(f"❌ Erro ao chamar a API da IA: {e}")
     return None
 
-# Função para gerar prompts (sem alterações)
 def create_remediation_prompt(finding, file_content):
+    """Cria um prompt específico baseado no tipo de vulnerabilidade."""
     file_path = finding['file']
     prompt = ""
     if finding['type'] == 'SAST':
@@ -49,7 +49,6 @@ def create_remediation_prompt(finding, file_content):
     finding['prompt'] = prompt
     return finding
 
-# LÓGICA PRINCIPAL - APLICAÇÃO EM LOTE
 def main():
     try:
         with open("semgrep-output.json") as f: semgrep_data = json.load(f)
@@ -60,11 +59,11 @@ def main():
         return
 
     all_findings = []
-    # Unifica os achados
     for r in semgrep_data.get("results", []): all_findings.append({'type': 'SAST', 'rule': r["check_id"], 'severity': r["extra"]["severity"], 'file': r["path"], 'line': r["start"]["line"]})
     for r in gitleaks_data: all_findings.append({'type': 'SECRET', 'rule': r["Description"], 'severity': 'CRITICAL', 'file': r["File"], 'line': r["StartLine"]})
     if trivy_data.get("Results"):
         for res in trivy_data["Results"]:
+            # O nome do alvo pode incluir o subdiretório, então verificamos com 'in'
             if "requirements.txt" in res.get("Target", ""):
                 for v in res.get("Vulnerabilities", []): all_findings.append({'type': 'SCA', 'vuln_id': v.get("VulnerabilityID"), 'package': v.get("PkgName"), 'version': v.get("InstalledVersion"), 'severity': v.get("Severity"), 'file': res.get("Target"), 'line': -1})
 
@@ -78,12 +77,12 @@ def main():
     modified_files = {}
     remediation_log = []
 
-    # Itera sobre cada achado crítico
     for finding in critical_findings:
         file_path = finding['file']
         
         if file_path not in modified_files:
             try:
+                # O script sempre roda do root, então o caminho do arquivo alvo está sempre dentro de 'target_repo'
                 with open(os.path.join("target_repo", file_path), 'r') as f:
                     modified_files[file_path] = f.read()
             except FileNotFoundError:
