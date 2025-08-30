@@ -31,11 +31,12 @@ jobs:
       - name: 3. Checkout do código do Scanner
         uses: actions/checkout@v4
 
+      # CORREÇÃO DEFINITIVA: Reinstalando o pacote LaTeX completo
       - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
-          # Instalação simplificada, pois não precisamos mais de fontes complexas
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base gitleaks
+          # A inclusão de 'texlive-latex-extra' resolve o erro do 'xcolor.sty'
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks
           sudo pipx install semgrep
 
       - name: 5. Clonar Repositório Alvo
@@ -68,3 +69,4 @@ jobs:
           path: |
             relatorio-${{ env.REPO_NAME }}.md
             relatorio-${{ env.REPO_NAME }}.pdf
+
