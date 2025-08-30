@@ -34,7 +34,8 @@ jobs:
       - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-xetex texlive-latex-extra texlive-fonts-recommended fonts-noto gitleaks
+          # Instalação simplificada, pois não precisamos mais de fontes complexas
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base gitleaks
           sudo pipx install semgrep
 
       - name: 5. Clonar Repositório Alvo
@@ -52,16 +53,12 @@ jobs:
         run: |
           python3 report.py ${{ env.REPO_NAME }}
       
-      - name: 8. Converter Relatório para PDF com Formatação Avançada
+      - name: 8. Converter Relatório para PDF
         run: |
           pandoc \
-            --pdf-engine=xelatex \
-            -V mainfont="Noto Serif" \
-            -V sansfont="Noto Sans" \
             -V geometry:"a4paper, margin=1in" \
-            -V table-width=0.9\\linewidth \
             --table-of-contents \
-            -f markdown "temp-report-for-pdf.md" \
+            "temp-report-for-pdf.md" \
             -o "relatorio-${{ env.REPO_NAME }}.pdf"
 
       - name: 9. Upload dos Relatórios Finais (MD e PDF)
