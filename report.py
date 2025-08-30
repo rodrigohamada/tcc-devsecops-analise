@@ -3,6 +3,7 @@ import os
 import sys
 import datetime
 import re
+from collections import Counter
 from googletrans import Translator
 
 # Inicializa o tradutor
@@ -15,18 +16,38 @@ def traduzir_mensagem(msg):
     except Exception:
         return msg  # fallback: mantém em inglês se falhar
 
-def formatar_texto(msg):
-    """Normaliza espaçamento e formatação do texto traduzido."""
+def ajustar_texto(msg):
+    """Corrige espaçamento e termos técnicos em traduções automáticas."""
     if not msg:
         return msg
-    # Espaço após pontuações
+
+    # Espaço após pontuação
     msg = re.sub(r'([.,;!?])([^\s])', r'\1 \2', msg)
+
+    # Termos técnicos
+    substituicoes = {
+        "github": "GitHub",
+        "Github": "GitHub",
+        "git hub": "GitHub",
+        "env:": "`env:`",
+        "Env:": "`env:`",
+        "run:": "`run:`",
+        "Run:": "`run:`",
+        "$ Envvar": "`$ENVVAR`",
+        "$ EnvVar": "`$ENVVAR`",
+        "$ Env": "`$ENVVAR`",
+        "scriptrun:": "script `run:`",
+        "comEnv:": "com `env:`",
+        "Flask": "**Flask**",
+        "SQL": "**SQL**"
+    }
+
+    for errado, certo in substituicoes.items():
+        msg = msg.replace(errado, certo)
+
     # Remove múltiplos espaços
     msg = re.sub(r'\s{2,}', ' ', msg)
-    # Corrige casos de "palavra.outra" → "palavra. outra"
-    msg = re.sub(r'([a-zA-Z])\.([A-ZÁÉÍÓÚ])', r'\1. \2', msg)
-    # Corrige espaços antes de vírgulas e pontos
-    msg = msg.replace(" .", ".").replace(" ,", ",")
+
     return msg.strip()
 
 def process_semgrep(data):
@@ -34,15 +55,15 @@ def process_semgrep(data):
     findings = []
     for r in data.get("results", []):
         msg = r["extra"]["message"].split('\n')[0]
-        msg_traduzida = traduzir_mensagem(msg)
-        msg_formatada = formatar_texto(msg_traduzida)
+        traduzida = traduzir_mensagem(msg)
+        ajustada = ajustar_texto(traduzida)
         findings.append({
             "tipo": "SAST",
             "regra": r["check_id"],
             "severidade": r["extra"]["severity"],
             "arquivo": r["path"],
             "linha": r["start"]["line"],
-            "mensagem": msg_formatada
+            "mensagem": ajustada
         })
     return findings
 
@@ -75,14 +96,37 @@ def process_trivy(data):
                     "severidade": v.get("Severity", "DESCONHECIDA"),
                     "pacote": v.get("PkgName", "N/A"),
                     "versao": v.get("InstalledVersion", "N/A"),
-                    "titulo": v.get("Title", "N/A")
+                    "titulo": ajustar_texto(traduzir_mensagem(v.get("Title", "N/A")))
                 })
     return findings
+
+def gerar_grafico_ascii(severidades):
+    """Gera um gráfico de barras ASCII da distribuição de severidades."""
+    contagem = Counter(severidades)
+    ordem = ["CRÍTICA", "ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]
+    grafico = "\n### Gráfico de Severidades (ASCII)\n\n"
+    for nivel in ordem:
+        qtd = contagem.get(nivel, 0) + contagem.get(nivel.upper(), 0)
+        grafico += f"{nivel:<12} | {'#' * qtd} ({qtd})\n"
+    return grafico
 
 def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
     """Gera o conteúdo do relatório em Markdown traduzido e formatado."""
     all_findings = sast_f + gitleaks_f + trivy_f
     severidades = [f["severidade"] for f in all_findings]
+
+    total = len(all_findings)
+    percentuais = {
+        "CRÍTICA": (severidades.count("CRITICAL") + severidades.count("CRÍTICA")) / total * 100 if total else 0,
+        "ALTA": (severidades.count("HIGH") + severidades.count("ALTA")) / total * 100 if total else 0,
+        "MÉDIA": (severidades.count("MEDIUM") + severidades.count("MÉDIA")) / total * 100 if total else 0,
+        "BAIXA": (severidades.count("LOW") + severidades.count("BAIXA")) / total * 100 if total else 0,
+        "DESCONHECIDA": (severidades.count("UNKNOWN") + severidades.count("DESCONHECIDA")) / total * 100 if total else 0,
+    }
+
+    # Top 5 regras mais encontradas
+    regras = Counter([f["regra"] for f in sast_f])
+    top_regras = regras.most_common(5)
 
     md_content = f"""
 # Relatório de Análise de Segurança
@@ -105,13 +149,30 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 
 ## Distribuição por Severidade
 
-| Severidade | Quantidade |
-|------------|------------|
-| CRÍTICA | {severidades.count("CRITICAL") + severidades.count("CRÍTICA")} |
-| ALTA | {severidades.count("HIGH") + severidades.count("ALTA")} |
-| MÉDIA | {severidades.count("MEDIUM") + severidades.count("MÉDIA")} |
-| BAIXA | {severidades.count("LOW") + severidades.count("BAIXA")} |
-| DESCONHECIDA | {severidades.count("UNKNOWN") + severidades.count("DESCONHECIDA")} |
+| Severidade | Quantidade | Percentual |
+|------------|------------|------------|
+| CRÍTICA | {severidades.count("CRITICAL") + severidades.count("CRÍTICA")} | {percentuais["CRÍTICA"]:.1f}% |
+| ALTA | {severidades.count("HIGH") + severidades.count("ALTA")} | {percentuais["ALTA"]:.1f}% |
+| MÉDIA | {severidades.count("MEDIUM") + severidades.count("MÉDIA")} | {percentuais["MÉDIA"]:.1f}% |
+| BAIXA | {severidades.count("LOW") + severidades.count("BAIXA")} | {percentuais["BAIXA"]:.1f}% |
+| DESCONHECIDA | {severidades.count("UNKNOWN") + severidades.count("DESCONHECIDA")} | {percentuais["DESCONHECIDA"]:.1f}% |
+
+{gerar_grafico_ascii(severidades)}
+
+---
+
+## Top 5 Regras Mais Encontradas (SAST)
+
+| Regra | Ocorrências |
+|-------|-------------|
+"""
+    if top_regras:
+        for regra, qtd in top_regras:
+            md_content += f"| {regra} | {qtd} |\n"
+    else:
+        md_content += "| Nenhuma regra encontrada | 0 |\n"
+
+    md_content += """
 
 ---
 
@@ -172,7 +233,7 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 - Corrigir vulnerabilidades críticas imediatamente.  
 - Revogar e rotacionar segredos expostos.  
 - Evitar interpolação insegura em scripts e workflows.  
-- Aplicar boas práticas de desenvolvimento seguro em Flask e SQL.  
+- Aplicar boas práticas de desenvolvimento seguro em **Flask** e **SQL**.  
 - Reexecutar os scans após aplicar correções.  
 """
 
