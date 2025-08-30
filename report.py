@@ -94,40 +94,39 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 | BAIXA | {severidades.count("LOW") + severidades.count("BAIXA")} |
 | DESCONHECIDA | {severidades.count("UNKNOWN") + severidades.count("DESCONHECIDA")} |
 
----
 ## Detalhamento dos Achados
 """
 
-    # Seção SAST (formato de bloco)
+    # Seção SAST (formato de bloco sem separador '---')
     md_content += "\n### Análise Estática (SAST)\n"
     if sast_f:
         for f in sorted(sast_f, key=lambda x: x['arquivo']):
-            md_content += f"\n---\n**Severidade:** {f['severidade']}\n\n"
+            md_content += f"\n**Severidade:** {f['severidade']}\n\n"
             md_content += f"**Regra:** `{f['regra']}`\n\n"
             md_content += f"**Localização:** `{f['arquivo']}:{f['linha']}`\n\n"
-            md_content += f"**Descrição:** {f['mensagem']}\n"
+            md_content += f"**Descrição:** {f['mensagem']}\n\n"
     else:
         md_content += "\nNenhum achado de SAST.\n"
 
-    # Seção Segredos (formato de bloco)
+    # Seção Segredos (formato de bloco sem separador '---')
     md_content += "\n### Vazamento de Segredos\n"
     if gitleaks_f:
         for f in sorted(gitleaks_f, key=lambda x: x['arquivo']):
-            md_content += f"\n---\n**Severidade:** {f['severidade']}\n\n"
+            md_content += f"\n**Severidade:** {f['severidade']}\n\n"
             md_content += f"**Descrição:** {f['regra']}\n\n"
             md_content += f"**Localização:** `{f['arquivo']}:{f['linha']}`\n\n"
-            md_content += f"**Padrão identificado:** `{f['padrao']}`\n"
+            md_content += f"**Padrão identificado:** `{f['padrao']}`\n\n"
     else:
         md_content += "\nNenhum segredo encontrado.\n"
 
-    # Seção SCA (formato de bloco)
+    # Seção SCA (formato de bloco sem separador '---')
     md_content += "\n### Análise de Dependências (SCA)\n"
     if trivy_f:
         for f in sorted(trivy_f, key=lambda x: x['pacote']):
-            md_content += f"\n---\n**Severidade:** {f['severidade']}\n\n"
+            md_content += f"\n**Severidade:** {f['severidade']}\n\n"
             md_content += f"**Pacote:** `{f['pacote']} (versão: {f['versao']})`\n\n"
             md_content += f"**Vulnerabilidade:** `{f['regra']}`\n\n"
-            md_content += f"**Título:** {f['titulo']}\n"
+            md_content += f"**Título:** {f['titulo']}\n\n"
     else:
         md_content += "\nNenhuma dependência vulnerável encontrada.\n"
 
@@ -157,3 +156,4 @@ if __name__ == "__main__":
     gitleaks = process_gitleaks(gitleaks_data)
     trivy = process_trivy(trivy_data)
     generate_report(repo_name, sast, gitleaks, trivy)
+
