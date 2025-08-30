@@ -2,18 +2,30 @@ import json
 import os
 import sys
 import datetime
+from googletrans import Translator
+
+# Inicializa o tradutor
+translator = Translator()
+
+def traduzir_mensagem(msg):
+    """Traduz mensagens de achados do inglês para português."""
+    try:
+        return translator.translate(msg, src="en", dest="pt").text
+    except Exception:
+        return msg  # fallback: mantém em inglês se falhar
 
 def process_semgrep(data):
     """Extrai e formata os achados do Semgrep."""
     findings = []
     for r in data.get("results", []):
+        msg = r["extra"]["message"].split('\n')[0]
         findings.append({
             "tipo": "SAST",
             "regra": r["check_id"],
             "severidade": r["extra"]["severity"],
             "arquivo": r["path"],
             "linha": r["start"]["line"],
-            "mensagem": r["extra"]["message"].split('\n')[0]
+            "mensagem": traduzir_mensagem(msg)
         })
     return findings
 
