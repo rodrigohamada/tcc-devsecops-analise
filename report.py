@@ -10,8 +10,7 @@ translator = Translator()
 
 def traduzir_texto(texto, dest='pt'):
     """Tenta traduzir um texto, retornando o original em caso de erro."""
-    try
-        # A API pode retornar None, então garantimos uma string
+    try:
         traducao = translator.translate(texto, dest=dest)
         return traducao.text if traducao and traducao.text else texto
     except Exception as e:
@@ -158,4 +157,3 @@ if __name__ == "__main__":
     gitleaks = process_gitleaks(gitleaks_data)
     trivy = process_trivy(trivy_data)
     generate_report(repo_name, sast, gitleaks, trivy)
-
