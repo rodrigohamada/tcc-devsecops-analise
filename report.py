@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import datetime
+import re
 from googletrans import Translator
 
 # Inicializa o tradutor
@@ -14,18 +15,34 @@ def traduzir_mensagem(msg):
     except Exception:
         return msg  # fallback: mantém em inglês se falhar
 
+def formatar_texto(msg):
+    """Normaliza espaçamento e formatação do texto traduzido."""
+    if not msg:
+        return msg
+    # Espaço após pontuações
+    msg = re.sub(r'([.,;!?])([^\s])', r'\1 \2', msg)
+    # Remove múltiplos espaços
+    msg = re.sub(r'\s{2,}', ' ', msg)
+    # Corrige casos de "palavra.outra" → "palavra. outra"
+    msg = re.sub(r'([a-zA-Z])\.([A-ZÁÉÍÓÚ])', r'\1. \2', msg)
+    # Corrige espaços antes de vírgulas e pontos
+    msg = msg.replace(" .", ".").replace(" ,", ",")
+    return msg.strip()
+
 def process_semgrep(data):
     """Extrai e formata os achados do Semgrep."""
     findings = []
     for r in data.get("results", []):
         msg = r["extra"]["message"].split('\n')[0]
+        msg_traduzida = traduzir_mensagem(msg)
+        msg_formatada = formatar_texto(msg_traduzida)
         findings.append({
             "tipo": "SAST",
             "regra": r["check_id"],
             "severidade": r["extra"]["severity"],
             "arquivo": r["path"],
             "linha": r["start"]["line"],
-            "mensagem": traduzir_mensagem(msg)
+            "mensagem": msg_formatada
         })
     return findings
 
