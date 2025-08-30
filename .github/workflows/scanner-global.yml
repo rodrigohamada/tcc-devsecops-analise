@@ -1,7 +1,5 @@
 name: Scanner de Segurança Universal
 
-# O run-name usa a URL completa, pois é a única informação disponível antes do job iniciar.
-# O nome do artefato, no entanto, usará o nome curto do repositório.
 run-name: Scan do repo ${{ github.event.inputs.repo_url }} por ${{ github.actor }}
 
 on:
@@ -10,59 +8,63 @@ on:
       repo_url:
         description: 'URL completa do repositório GitHub público a ser escaneado'
         required: true
-        default: ''
+        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
-  # Voltamos a usar um único job para simplicidade e robustez
   scan-and-report:
     runs-on: ubuntu-latest
     
     steps:
-      # Novo Passo 1: Extrai o nome do repositório e o salva como variável de ambiente
       - name: 1. Extrair nome do repositório
         run: |
           REPO_NAME=$(basename ${{ github.event.inputs.repo_url }} .git)
           echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
 
-      - name: 2. Checkout do código do Scanner
+      - name: 2. Validar URL do Repositório
+        run: |
+          if [[ "${{ github.event.inputs.repo_url }}" == *"/blob/"* ]]; then
+            echo "::error::URL inválida. Por favor, forneça a URL principal do repositório (ex: https://github.com/usuario/repo), não a URL de um arquivo específico."
+            exit 1
+          fi
+          echo "URL parece ser válida."
+
+      - name: 3. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 3. Instalar Ferramentas
+      - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pip pandoc texlive-xetex texlive-latex-extra texlive-fonts-recommended fonts-noto gitleaks
           sudo pipx install semgrep
 
-      - name: 4. Clonar Repositório Alvo
+      - name: 5. Clonar Repositório Alvo
         run: |
           git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
       
-      - name: 5. Executar Scans de Segurança
+      - name: 6. Executar Scans de Segurança
         run: |
           cd target_repo
-          semgrep scan --config auto --json > ../semgrep-output.json
-          gitleaks detect --report-format json --report-path ../gitleaks-output.json
-          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target
+          semgrep scan --config auto --json > ../semgrep-output.json || true
+          gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
+          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
 
-      - name: 6. Gerar Relatórios
+      - name: 7. Gerar Relatórios
         run: |
           python3 report.py ${{ env.REPO_NAME }}
       
-      - name: 7. Converter Relatório para PDF com Formatação Avançada
+      - name: 8. Converter Relatório para PDF com Formatação Avançada
         run: |
           pandoc \
             --pdf-engine=xelatex \
             -V mainfont="Noto Serif" \
             -V sansfont="Noto Sans" \
             -V geometry:"a4paper, margin=1in" \
-            -V header-includes:"\\usepackage{tabularx}" \
-            -V header-includes:"\\usepackage{fvextra}" \
-            -V header-includes:"\\DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines,commandchars=\\\\\\{\\}}" \
+            -V table-width=0.9\\linewidth \
             --table-of-contents \
             -f markdown "temp-report-for-pdf.md" \
             -o "relatorio-${{ env.REPO_NAME }}.pdf"
 
-      - name: 8. Upload dos Relatórios Finais (MD e PDF)
+      - name: 9. Upload dos Relatórios Finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
           name: Relatorio-Scanner-${{ env.REPO_NAME }}
