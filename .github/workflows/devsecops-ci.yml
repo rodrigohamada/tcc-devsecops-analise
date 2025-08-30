@@ -27,7 +27,7 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          exit-code: '1' # Mantemos a falha, pois é importante para o workflow
+          exit-code: '1' 
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
           format: 'sarif'
@@ -50,12 +50,12 @@ jobs:
           
       # --- FINALIZAÇÃO E UPLOAD DOS RESULTADOS DE SEGURANÇA ---
       - name: 7. Executar Análise final do CodeQL
-        # CORREÇÃO APLICADA AQUI: Garante que a análise do CodeQL rode mesmo se o Trivy falhar.
+      
         if: always()
         uses: github/codeql-action/analyze@v3
 
       - name: 8. Upload dos resultados do Trivy para a aba de Segurança
-        # CORREÇÃO APLICADA AQUI: Garante que o upload do SARIF rode mesmo se o Trivy falhar.
+
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
