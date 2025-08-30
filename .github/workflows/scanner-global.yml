@@ -31,11 +31,10 @@ jobs:
       - name: 3. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      # CORREÇÃO DEFINITIVA: Reinstalando o pacote LaTeX completo
+      # Instalar ferramentas base: LaTeX, Pandoc, Gitleaks, Semgrep
       - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
-          # A inclusão de 'texlive-latex-extra' resolve o erro do 'xcolor.sty'
           sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks
           sudo pipx install semgrep
 
@@ -50,11 +49,15 @@ jobs:
           gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
           docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
 
-      - name: 7. Gerar Relatórios
+      - name: 7. Instalar dependências Python
+        run: |
+          pip install -r requirements.txt
+
+      - name: 8. Gerar Relatórios
         run: |
           python3 report.py ${{ env.REPO_NAME }}
       
-      - name: 8. Converter Relatório para PDF
+      - name: 9. Converter Relatório para PDF
         run: |
           pandoc \
             -V geometry:"a4paper, margin=1in" \
@@ -62,11 +65,10 @@ jobs:
             "temp-report-for-pdf.md" \
             -o "relatorio-${{ env.REPO_NAME }}.pdf"
 
-      - name: 9. Upload dos Relatórios Finais (MD e PDF)
+      - name: 10. Upload dos Relatórios Finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
           name: Relatorio-Scanner-${{ env.REPO_NAME }}
           path: |
             relatorio-${{ env.REPO_NAME }}.md
             relatorio-${{ env.REPO_NAME }}.pdf
-
