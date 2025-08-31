@@ -4,3 +4,8 @@ requests==2.25.0
 
 # Tradução automática (Google Translate)
 googletrans==4.0.0-rc1
+
+# Manipulação de YAML e AST / reescrita de código
+ruamel.yaml==0.18.6
+astor==0.8.1
+packaging==24.1
