@@ -1,74 +1,73 @@
 name: Scanner de Segurança Universal
 
-run-name: Scan do repo ${{ github.event.inputs.repo_url }} por ${{ github.actor }}
+run-name: Varredura do repositório ${{ github.event.inputs.url_repositorio }} por ${{ github.actor }}
 
 on:
   workflow_dispatch:
     inputs:
-      repo_url:
-        description: 'URL completa do repositório GitHub público a ser escaneado'
+      url_repositorio:
+        description: 'URL completa do repositório GitHub público a ser analisado'
         required: true
         default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
-  scan-and-report:
+  escanear-e-gerar-relatorio:
     runs-on: ubuntu-latest
     
     steps:
       - name: 1. Extrair nome do repositório
         run: |
-          REPO_NAME=$(basename ${{ github.event.inputs.repo_url }} .git)
-          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
+          NOME_REPOSITORIO=$(basename ${{ github.event.inputs.url_repositorio }} .git)
+          echo "NOME_REPOSITORIO=$NOME_REPOSITORIO" >> $GITHUB_ENV
 
-      - name: 2. Validar URL do Repositório
+      - name: 2. Validar URL do repositório
         run: |
-          if [[ "${{ github.event.inputs.repo_url }}" == *"/blob/"* ]]; then
-            echo "::error::URL inválida. Por favor, forneça a URL principal do repositório (ex: https://github.com/usuario/repo), não a URL de um arquivo específico."
+          if [[ "${{ github.event.inputs.url_repositorio }}" == *"/blob/"* ]]; then
+            echo "::error::URL inválida. Por favor, forneça a URL principal do repositório (ex: https://github.com/usuario/repositorio), e não a URL de um arquivo específico."
             exit 1
           fi
-          echo "URL parece ser válida."
+          echo "URL válida para análise."
 
-      - name: 3. Checkout do código do Scanner
+      - name: 3. Fazer checkout do código do Scanner
         uses: actions/checkout@v4
 
-      # Instalar ferramentas base: LaTeX, Pandoc, Gitleaks, Semgrep
-      - name: 4. Instalar Ferramentas
+      - name: 4. Instalar ferramentas necessárias (LaTeX, Pandoc, Gitleaks, Semgrep)
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra texlive-xetex gitleaks
           sudo pipx install semgrep
 
-      - name: 5. Clonar Repositório Alvo
+      - name: 5. Clonar repositório alvo
         run: |
-          git clone ${{ github.event.inputs.repo_url }} target_repo --depth 1
+          git clone ${{ github.event.inputs.url_repositorio }} repositorio_alvo --depth 1
       
       - name: 6. Executar Scans de Segurança
         run: |
-          cd target_repo
-          semgrep scan --config auto --json > ../semgrep-output.json || true
-          gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
-          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
+          cd repositorio_alvo
+          semgrep scan --config auto --json > ../saida-semgrep.json || true
+          gitleaks detect --report-format json --report-path ../saida-gitleaks.json || true
+          docker run --rm -v $(pwd):/pasta-escanear aquasec/trivy:latest fs --format json --output /pasta-escanear/../saida-trivy.json /pasta-escanear || true
 
-      - name: 7. Instalar dependências Python
+      - name: 7. Instalar dependências do Python
         run: |
           pip install -r requirements.txt
 
-      - name: 8. Gerar Relatórios
+      - name: 8. Gerar relatório em Markdown
         run: |
-          python3 report.py ${{ env.REPO_NAME }}
+          python3 relatorio.py ${{ env.NOME_REPOSITORIO }}
       
-      - name: 9. Converter Relatório para PDF
+      - name: 9. Converter relatório para PDF
         run: |
           pandoc \
             -V geometry:"a4paper, margin=1in" \
             --table-of-contents \
             "temp-report-for-pdf.md" \
-            -o "relatorio-${{ env.REPO_NAME }}.pdf"
+            -o "relatorio-${{ env.NOME_REPOSITORIO }}.pdf"
 
-      - name: 10. Upload dos Relatórios Finais (MD e PDF)
+      - name: 10. Publicar relatórios finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
-          name: Relatorio-Scanner-${{ env.REPO_NAME }}
+          name: Relatorio-Seguranca-${{ env.NOME_REPOSITORIO }}
           path: |
-            relatorio-${{ env.REPO_NAME }}.md
-            relatorio-${{ env.REPO_NAME }}.pdf
+            relatorio-${{ env.NOME_REPOSITORIO }}.md
+            relatorio-${{ env.NOME_REPOSITORIO }}.pdf
