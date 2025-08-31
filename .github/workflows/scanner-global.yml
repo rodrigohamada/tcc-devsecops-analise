@@ -35,7 +35,7 @@ jobs:
       - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks zip
           sudo pipx install semgrep
 
       - name: 5. Clonar Repositório Alvo
@@ -53,11 +53,11 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: 8. Gerar Relatórios
+      - name: 8. Gerar Relatórios (Scanner)
         run: |
           python3 report.py ${{ env.REPO_NAME }}
       
-      - name: 9. Converter Relatório para PDF
+      - name: 9. Converter Relatório do Scan para PDF
         run: |
           pandoc \
             -V geometry:"a4paper, margin=1in" \
@@ -65,10 +65,21 @@ jobs:
             "temp-report-for-pdf.md" \
             -o "relatorio-${{ env.REPO_NAME }}.pdf"
 
-      - name: 10. Upload dos Relatórios Finais (MD e PDF)
+      - name: 10. Executar Fix Automático via IA
+        run: |
+          python3 ai_fix.py \
+            --repo-dir target_repo \
+            --semgrep semgrep-output.json \
+            --gitleaks gitleaks-output.json \
+            --trivy trivy-output.json \
+            --zip-out fixes-${{ env.REPO_NAME }}.zip
+
+      - name: 11. Upload dos Relatórios e Fixes
         uses: actions/upload-artifact@v4
         with:
-          name: Relatorio-Scanner-${{ env.REPO_NAME }}
+          name: Resultados-Scanner-${{ env.REPO_NAME }}
           path: |
             relatorio-${{ env.REPO_NAME }}.md
             relatorio-${{ env.REPO_NAME }}.pdf
+            fixes-${{ env.REPO_NAME }}.zip
+            fix-report-${{ env.REPO_NAME }}.pdf
