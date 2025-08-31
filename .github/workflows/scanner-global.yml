@@ -35,8 +35,9 @@ jobs:
       - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks zip
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra texlive-xetex gitleaks zip
           sudo pipx install semgrep
+
 
       - name: 5. Clonar Repositório Alvo
         run: |
