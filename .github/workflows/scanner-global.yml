@@ -1,6 +1,6 @@
 name: Scanner de Segurança Universal
 
-run-name: Scan do repositório ${{ github.event.inputs.repo_url }} por ${{ github.actor }}
+run-name: Scan do repo ${{ github.event.inputs.repo_url }} por ${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -11,30 +11,31 @@ on:
         default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
 
 jobs:
-  escanear-e-relatar:
+  scan-and-report:
     runs-on: ubuntu-latest
     
     steps:
       - name: 1. Extrair nome do repositório
         run: |
-          NOME_REPO=$(basename ${{ github.event.inputs.repo_url }} .git)
-          echo "NOME_REPO=$NOME_REPO" >> $GITHUB_ENV
+          REPO_NAME=$(basename ${{ github.event.inputs.repo_url }} .git)
+          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
 
       - name: 2. Validar URL do Repositório
         run: |
           if [[ "${{ github.event.inputs.repo_url }}" == *"/blob/"* ]]; then
-            echo "::error::URL inválida. Forneça a URL principal do repositório (ex: https://github.com/usuario/repo), não a de um arquivo específico."
+            echo "::error::URL inválida. Por favor, forneça a URL principal do repositório (ex: https://github.com/usuario/repo), não a URL de um arquivo específico."
             exit 1
           fi
-          echo "URL validada com sucesso."
+          echo "URL parece ser válida."
 
       - name: 3. Checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 4. Instalar Ferramentas Necessárias
+      # Instalar ferramentas base: LaTeX, Pandoc, Gitleaks, Semgrep
+      - name: 4. Instalar Ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra texlive-xetex gitleaks zip
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra gitleaks
           sudo pipx install semgrep
 
       - name: 5. Clonar Repositório Alvo
@@ -44,41 +45,30 @@ jobs:
       - name: 6. Executar Scans de Segurança
         run: |
           cd target_repo
-          semgrep scan --config auto --json > ../semgrep-saida.json || true
-          gitleaks detect --report-format json --report-path ../gitleaks-saida.json || true
-          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-saida.json /scan-target || true
+          semgrep scan --config auto --json > ../semgrep-output.json || true
+          gitleaks detect --report-format json --report-path ../gitleaks-output.json || true
+          docker run --rm -v $(pwd):/scan-target aquasec/trivy:latest fs --format json --output /scan-target/../trivy-output.json /scan-target || true
 
       - name: 7. Instalar dependências Python
         run: |
           pip install -r requirements.txt
 
-      - name: 8. Gerar Relatório do Scanner
+      - name: 8. Gerar Relatórios
         run: |
-          python3 report.py ${{ env.NOME_REPO }}
+          python3 report.py ${{ env.REPO_NAME }}
       
-      - name: 9. Converter Relatório do Scanner para PDF
+      - name: 9. Converter Relatório para PDF
         run: |
           pandoc \
             -V geometry:"a4paper, margin=1in" \
             --table-of-contents \
             "temp-report-for-pdf.md" \
-            -o "relatorio-${{ env.NOME_REPO }}.pdf"
+            -o "relatorio-${{ env.REPO_NAME }}.pdf"
 
-      - name: 10. Executar Correções Automáticas via IA
-        run: |
-          python3 ai_fix.py \
-            --repo-dir target_repo \
-            --semgrep semgrep-saida.json \
-            --gitleaks gitleaks-saida.json \
-            --trivy trivy-saida.json \
-            --saida-zip fixes-${{ env.NOME_REPO }}.zip
-
-      - name: 11. Upload dos Relatórios e Arquivos de Correção
+      - name: 10. Upload dos Relatórios Finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
-          name: Resultados-Scanner-${{ env.NOME_REPO }}
+          name: Relatorio-Scanner-${{ env.REPO_NAME }}
           path: |
-            relatorio-${{ env.NOME_REPO }}.md
-            relatorio-${{ env.NOME_REPO }}.pdf
-            fixes-${{ env.NOME_REPO }}.zip
-            fix-report-${{ env.NOME_REPO }}.pdf
+            relatorio-${{ env.REPO_NAME }}.md
+            relatorio-${{ env.REPO_NAME }}.pdf
