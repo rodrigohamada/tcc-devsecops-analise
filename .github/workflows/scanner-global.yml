@@ -52,7 +52,6 @@ jobs:
       - name: 7. Instalar dependências Python
         run: |
           pip install -r requirements.txt
-          pip install ruamel.yaml astor packaging
 
       - name: 8. Gerar Relatórios
         run: |
@@ -73,20 +72,3 @@ jobs:
           path: |
             relatorio-${{ env.REPO_NAME }}.md
             relatorio-${{ env.REPO_NAME }}.pdf
-
-      # --- Correções automáticas de segurança ---
-      - name: 11. Aplicar Correções Automáticas
-        run: |
-          python3 ai_fix.py \
-            --repo-dir target_repo \
-            --report-md relatorio-${{ env.REPO_NAME }}.md \
-            --semgrep semgrep-output.json \
-            --gitleaks gitleaks-output.json \
-            --trivy trivy-output.json \
-            --zip-out fixes-${{ env.REPO_NAME }}.zip
-
-      - name: 12. Upload do ZIP com Códigos Corrigidos
-        uses: actions/upload-artifact@v4
-        with:
-          name: Fixes-Scanner-${{ env.REPO_NAME }}
-          path: fixes-${{ env.REPO_NAME }}.zip
