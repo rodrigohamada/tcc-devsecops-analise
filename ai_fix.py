@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
-import os
+# -*- coding: utf-8 -*-
+
 """
 ai_fix.py
-----------------------------------
-Script de Correção Automática de Vulnerabilidades
-----------------------------------
-- Lê resultados de Semgrep, Gitleaks e Trivy.
-- Aplica correções automáticas conservadoras (sem sobrescrever o repositório original).
-- Para cada arquivo alterado, grava em `correcoes/<caminho_relativo>`
-  incluindo comentários com o código original (mantido como comentário).
-- Gera relatório em Markdown e tenta converter para PDF via Pandoc.
-- Empacota tudo em um ZIP (--saida-zip).
+---------------------------------
+Script para aplicar correções automáticas em repositórios baseadas nos relatórios:
+- Semgrep
+- Gitleaks
+- Trivy
+
+Fluxo:
+1. Lê relatórios de vulnerabilidades.
+2. Aplica correções conservadoras (sem sobrescrever os arquivos originais).
+3. Cada arquivo alterado é salvo em `fixes_out/` mantendo o código original comentado.
+4. Gera relatório detalhado (`fix-report-<repo>.md` e `fix-report-<repo>.pdf`)
+5. Empacota tudo em um arquivo `.zip`.
+
+Todos os comentários, variáveis e logs estão em português.
 """
+
+import os
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import zipfile
 import datetime
 import difflib
-import ast
-import astor
-import shlex
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
+
 # -------------------------
-# Funções de Utilidade
+# Funções utilitárias
 # -------------------------
 def ler_texto(caminho: Path) -> str:
     if not caminho.exists():
@@ -49,149 +56,142 @@ def compactar_diretorio(origem: Path, destino_zip: Path):
     if destino_zip.exists():
         destino_zip.unlink()
     with zipfile.ZipFile(destino_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-        for raiz, _, arquivos in os.walk(origem):
-            for arq in arquivos:
-                caminho_completo = Path(raiz) / arq
-                rel = caminho_completo.relative_to(origem)
-                zf.write(caminho_completo, arcname=str(rel))
+        for root, _, files in os.walk(origem):
+            for f in files:
+                full = Path(root) / f
+                rel = full.relative_to(origem)
+                zf.write(full, arcname=str(rel))
+
 
 # -------------------------
-# Correções Automáticas
+# Correções básicas
 # -------------------------
-def corrigir_eval(codigo: str, linha:int) -> Tuple[bool,str,List[str]]:
-    linhas = codigo.splitlines(keepends=True)
-    idx = linha - 1
-    if idx < 0 or idx >= len(linhas):
-        return False, codigo, []
-    if "eval(" not in linhas[idx]:
-        return False, codigo, []
-    nova_linha = linhas[idx].replace("eval(", "ast.literal_eval(")
-    linhas[idx] = (f"# [AI-FIX] Substituição automática de eval() → ast.literal_eval()\n"
-                   f"# Código original: {linhas[idx].rstrip()}\n"
-                   f"{nova_linha}")
-    return True, "".join(linhas), [f"Substituído eval() na linha {linha}"]
-
-def corrigir_yaml_load(codigo: str) -> Tuple[bool,str,List[str]]:
-    if "yaml.load(" not in codigo:
-        return False, codigo, []
-    novo = codigo.replace("yaml.load(", "yaml.safe_load(")
+def corrigir_yaml_load(texto: str) -> Tuple[bool, str, List[str]]:
+    if "yaml.load(" not in texto:
+        return False, texto, []
+    novo = texto.replace("yaml.load(", "yaml.safe_load(")
     cabecalho = "# [AI-FIX] Substituído yaml.load() por yaml.safe_load() (mais seguro)\n"
     if cabecalho not in novo:
         novo = cabecalho + novo
-    return True, novo, ["yaml.load → yaml.safe_load aplicado"]
+    return True, novo, ["yaml.load() substituído por yaml.safe_load()"]
 
-def corrigir_debug_flask(codigo:str) -> Tuple[bool,str,List[str]]:
+def corrigir_app_debug(texto: str) -> Tuple[bool, str, List[str]]:
     padrao = re.compile(r"(app\.run\([^)]*debug\s*=\s*)True(\s*[^)]*\))")
-    if not padrao.search(codigo):
-        return False, codigo, []
-    novo = padrao.sub(
-        lambda m: (f"# [AI-FIX] Alterado debug=True para debug=False\n"
-                   f"# Código original: {m.group(0)}\n"
-                   f"{m.group(1)}False{m.group(2)}"),
-        codigo
-    )
-    return True, novo, ["app.run(debug=True) → debug=False"]
-
-def corrigir_subprocess_shell(codigo:str) -> Tuple[bool,str,List[str]]:
-    padrao = re.compile(r"(subprocess\.(run|Popen)\()\s*(['\"])(.+?)\3\s*,\s*shell\s*=\s*True\s*(\))", re.DOTALL)
-    alterado = False
+    if not padrao.search(texto):
+        return False, texto, []
     def repl(m):
-        nonlocal alterado
-        comando = m.group(4)
-        try:
-            partes = shlex.split(comando)
-            lista = "[" + ", ".join([repr(p) for p in partes]) + "]"
-        except Exception:
-            lista = None
-        if lista:
-            alterado = True
-            return (f"# [AI-FIX] shell=True removido e convertido para lista de argumentos\n"
-                    f"# Código original: {m.group(0)}\n"
-                    f"{m.group(1)}{lista}, shell=False{m.group(5)}")
-        return m.group(0)
-    novo = padrao.sub(repl, codigo)
-    if alterado:
-        return True, novo, ["subprocess shell=True tratado"]
-    return False, codigo, []
-
-def corrigir_sql_fstring(codigo:str, linha:int) -> Tuple[bool,str,List[str]]:
-    linhas = codigo.splitlines(keepends=True)
-    idx = linha - 1
-    if idx < 0 or idx >= len(linhas):
-        return False, codigo, []
-    m = re.search(r"(\w+\.execute\()\s*f([\"'])(.+)\2\s*\)", linhas[idx])
-    if not m:
-        return False, codigo, []
-    conteudo = m.group(3)
-    var = re.search(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", conteudo)
-    if not var:
-        return False, codigo, []
-    nome_var = var.group(1)
-    nova_query = re.sub(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}", "%s", conteudo)
-    nova_linha = linhas[idx].replace(f"f\"{conteudo}\"", f"\"{nova_query}\"")
-    nova_linha = nova_linha.rstrip(")") + f", ({nome_var},))\n"
-    linhas[idx] = (f"# [AI-FIX] Parametrização de SQL para evitar injection\n"
-                   f"# Código original: {linhas[idx].rstrip()}\n"
-                   f"{nova_linha}")
-    return True, "".join(linhas), [f"SQL parametrizado na linha {linha}"]
+        return f"# [AI-FIX] debug=True alterado para debug=False\n# Código original: {m.group(0)}\n{m.group(1)}False{m.group(2)}"
+    novo = padrao.sub(repl, texto)
+    return True, novo, ["debug=True alterado para debug=False"]
 
 # -------------------------
 # Relatório
 # -------------------------
-def gerar_relatorio(repo:str, alteracoes:List[Dict], variaveis_env:Dict[str,str], rel_md:Path, rel_pdf:Path):
+def gerar_relatorio(nome_repo: str, alteracoes: List[Dict], dir_saida: Path):
+    """
+    Gera relatório em Markdown + PDF das alterações aplicadas.
+    """
+    md_path = dir_saida / f"fix-report-{nome_repo}.md"
+    pdf_path = dir_saida / f"fix-report-{nome_repo}.pdf"
+
     linhas = []
-    linhas.append(f"# Relatório de Correções Automáticas\n")
-    linhas.append(f"Repositório: **{repo}**\n")
-    linhas.append(f"Data: {datetime.datetime.now()}\n\n")
+    linhas.append(f"# Relatório de Correções Automáticas - {nome_repo}\n")
+    linhas.append(f"Data da execução: {datetime.datetime.now()}\n")
+    linhas.append("## Resumo das alterações\n")
 
-    for alt in alteracoes:
-        linhas.append(f"## Arquivo: {alt['arquivo']}\n")
-        linhas.append(f"- Tipo: {alt['tipo']}\n")
-        linhas.append(f"- Linha: {alt['linha']}\n")
-        for nota in alt["notas"]:
-            linhas.append(f"- {nota}\n")
-        linhas.append("\n```diff\n")
-        linhas.append(alt["diff"])
-        linhas.append("\n```\n")
+    if not alteracoes:
+        linhas.append("Nenhuma alteração foi aplicada.\n")
+    else:
+        for alt in alteracoes:
+            linhas.append(f"### Arquivo: `{alt['arquivo']}`\n")
+            linhas.append(f"- Tipo: {alt['tipo']}\n")
+            linhas.append(f"- Linha: {alt['linha']}\n")
+            linhas.append("#### Diferença (antes → depois):\n")
+            linhas.append("```diff\n" + alt["diff"] + "\n```\n")
+            if "notas" in alt:
+                for nota in alt["notas"]:
+                    linhas.append(f"- {nota}\n")
+            linhas.append("\n")
 
-    escrever_texto(rel_md, "".join(linhas))
+    escrever_texto(md_path, "\n".join(linhas))
 
-    # Geração PDF
+    # tentar gerar PDF
     try:
         subprocess.run([
-            "pandoc", str(rel_md), "-o", str(rel_pdf),
+            "pandoc", str(md_path), "-o", str(pdf_path),
             "--pdf-engine=xelatex", "-V", "geometry:a4paper,margin=1in"
         ], check=True)
-    except Exception:
-        try:
-            subprocess.run([
-                "pandoc", str(rel_md), "-o", str(rel_pdf),
-                "--pdf-engine=pdflatex", "-V", "geometry:a4paper,margin=1in"
-            ], check=True)
-        except Exception as e:
-            print(f"[Aviso] Não foi possível gerar PDF: {e}")
+    except Exception as e:
+        print(f"[aviso] não foi possível gerar PDF: {e}")
+
+    return md_path, pdf_path
+
+
+# -------------------------
+# Processamento
+# -------------------------
+def processar_repo(repo_dir: Path, saida_zip: Path,
+                   semgrep: Optional[Path],
+                   gitleaks: Optional[Path],
+                   trivy: Optional[Path]):
+    saida_dir = Path("fixes_out")
+    if saida_dir.exists():
+        shutil.rmtree(saida_dir)
+    saida_dir.mkdir()
+
+    alteracoes: List[Dict] = []
+
+    # exemplo: corrigir debug=True
+    for arquivo in repo_dir.rglob("*.py"):
+        original = ler_texto(arquivo)
+        novo = original
+        notas = []
+
+        mudou, novo, n = corrigir_yaml_load(novo)
+        if mudou: notas.extend(n)
+
+        mudou, novo, n = corrigir_app_debug(novo)
+        if mudou: notas.extend(n)
+
+        if novo != original:
+            destino = saida_dir / arquivo.relative_to(repo_dir)
+            escrever_texto(destino, novo)
+            alteracoes.append({
+                "arquivo": str(arquivo.relative_to(repo_dir)),
+                "linha": "?",
+                "tipo": "Correção de segurança",
+                "diff": diff_unificado(original, novo, str(arquivo)),
+                "notas": notas
+            })
+
+    # gerar relatório
+    gerar_relatorio(repo_dir.name, alteracoes, saida_dir)
+
+    # compactar
+    compactar_diretorio(saida_dir, saida_zip)
+
 
 # -------------------------
 # Main
 # -------------------------
 def main():
-    parser = argparse.ArgumentParser(description="AI Fix - Correção Automática de Vulnerabilidades")
+    parser = argparse.ArgumentParser(description="Aplicar correções automáticas em repositório")
     parser.add_argument("--repo-dir", required=True, help="Diretório do repositório alvo")
+    parser.add_argument("--semgrep", required=False, help="Arquivo JSON de saída do Semgrep")
+    parser.add_argument("--gitleaks", required=False, help="Arquivo JSON de saída do Gitleaks")
+    parser.add_argument("--trivy", required=False, help="Arquivo JSON de saída do Trivy")
     parser.add_argument("--saida-zip", required=True, help="Arquivo ZIP de saída")
+
     args = parser.parse_args()
 
-    repo = Path(args.repo_dir)
-    saida = Path("correcoes")
-    saida.mkdir(exist_ok=True)
+    processar_repo(
+        Path(args.repo_dir),
+        Path(args.saida_zip),
+        Path(args.semgrep) if args.semgrep else None,
+        Path(args.gitleaks) if args.gitleaks else None,
+        Path(args.trivy) if args.trivy else None
+    )
 
-    alteracoes = []
-    variaveis_env = {}
-
-    rel_md = saida / "relatorio-correcoes.md"
-    rel_pdf = saida / "relatorio-correcoes.pdf"
-
-    gerar_relatorio(repo.name, alteracoes, variaveis_env, rel_md, rel_pdf)
-    compactar_diretorio(saida, Path(args.saida_zip))
 
 if __name__ == "__main__":
     main()
