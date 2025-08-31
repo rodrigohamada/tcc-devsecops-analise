@@ -6,88 +6,88 @@ import re
 from googletrans import Translator
 
 # Inicializa o tradutor
-translator = Translator()
+tradutor = Translator()
 
-def traduzir_mensagem(msg):
+def traduzir_mensagem(mensagem):
     """Traduz mensagens de achados do inglês para português."""
     try:
-        return translator.translate(msg, src="en", dest="pt").text
+        return tradutor.translate(mensagem, src="en", dest="pt").text
     except Exception:
-        return msg  # fallback: mantém em inglês se falhar
+        return mensagem  # fallback: mantém em inglês se falhar
 
-def formatar_texto(msg):
+def formatar_texto(mensagem):
     """Normaliza espaçamento e formatação do texto traduzido."""
-    if not msg:
-        return msg
+    if not mensagem:
+        return mensagem
     # Espaço após pontuações
-    msg = re.sub(r'([.,;!?])([^\s])', r'\1 \2', msg)
+    mensagem = re.sub(r'([.,;!?])([^\s])', r'\1 \2', mensagem)
     # Remove múltiplos espaços
-    msg = re.sub(r'\s{2,}', ' ', msg)
+    mensagem = re.sub(r'\s{2,}', ' ', mensagem)
     # Corrige casos de "palavra.outra" → "palavra. outra"
-    msg = re.sub(r'([a-zA-Z])\.([A-ZÁÉÍÓÚ])', r'\1. \2', msg)
+    mensagem = re.sub(r'([a-zA-Z])\.([A-ZÁÉÍÓÚ])', r'\1. \2', mensagem)
     # Corrige espaços antes de vírgulas e pontos
-    msg = msg.replace(" .", ".").replace(" ,", ",")
-    return msg.strip()
+    mensagem = mensagem.replace(" .", ".").replace(" ,", ",")
+    return mensagem.strip()
 
-def process_semgrep(data):
+def processar_semgrep(dados):
     """Extrai e formata os achados do Semgrep."""
-    findings = []
-    for r in data.get("results", []):
-        msg = r["extra"]["message"].split('\n')[0]
-        msg_traduzida = traduzir_mensagem(msg)
-        msg_formatada = formatar_texto(msg_traduzida)
-        findings.append({
+    achados = []
+    for resultado in dados.get("results", []):
+        mensagem = resultado["extra"]["message"].split('\n')[0]
+        mensagem_traduzida = traduzir_mensagem(mensagem)
+        mensagem_formatada = formatar_texto(mensagem_traduzida)
+        achados.append({
             "tipo": "SAST",
-            "regra": r["check_id"],
-            "severidade": r["extra"]["severity"],
-            "arquivo": r["path"],
-            "linha": r["start"]["line"],
-            "mensagem": msg_formatada
+            "regra": resultado["check_id"],
+            "severidade": resultado["extra"]["severity"],
+            "arquivo": resultado["path"],
+            "linha": resultado["start"]["line"],
+            "mensagem": mensagem_formatada
         })
-    return findings
+    return achados
 
-def process_gitleaks(data):
+def processar_gitleaks(dados):
     """Extrai e formata os achados do Gitleaks."""
-    findings = []
-    for r in data:
-        findings.append({
+    achados = []
+    for resultado in dados:
+        achados.append({
             "tipo": "SEGREDO",
-            "regra": r["Description"],
+            "regra": resultado["Description"],
             "severidade": "CRÍTICA",
-            "arquivo": r["File"],
-            "linha": r["StartLine"],
-            "padrao": r["Secret"][:6] + '...'
+            "arquivo": resultado["File"],
+            "linha": resultado["StartLine"],
+            "padrao": resultado["Secret"][:6] + '...'
         })
-    return findings
+    return achados
 
-def process_trivy(data):
+def processar_trivy(dados):
     """Extrai e formata os achados do Trivy."""
-    findings = []
-    if not data.get("Results"):
+    achados = []
+    if not dados.get("Results"):
         return []
-    for res in data["Results"]:
-        file_target = os.path.basename(res.get("Target", ""))
-        if "requirements.txt" in file_target:
-            for v in res.get("Vulnerabilities", []):
-                findings.append({
+    for resultado in dados["Results"]:
+        alvo_arquivo = os.path.basename(resultado.get("Target", ""))
+        if "requirements.txt" in alvo_arquivo:
+            for vulnerabilidade in resultado.get("Vulnerabilities", []):
+                achados.append({
                     "tipo": "SCA",
-                    "regra": v.get("VulnerabilityID", "N/A"),
-                    "severidade": v.get("Severity", "DESCONHECIDA"),
-                    "pacote": v.get("PkgName", "N/A"),
-                    "versao": v.get("InstalledVersion", "N/A"),
-                    "titulo": v.get("Title", "N/A")
+                    "regra": vulnerabilidade.get("VulnerabilityID", "N/A"),
+                    "severidade": vulnerabilidade.get("Severity", "DESCONHECIDA"),
+                    "pacote": vulnerabilidade.get("PkgName", "N/A"),
+                    "versao": vulnerabilidade.get("InstalledVersion", "N/A"),
+                    "titulo": vulnerabilidade.get("Title", "N/A")
                 })
-    return findings
+    return achados
 
-def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
+def gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_trivy):
     """Gera o conteúdo do relatório em Markdown traduzido e formatado."""
-    all_findings = sast_f + gitleaks_f + trivy_f
-    severidades = [f["severidade"] for f in all_findings]
+    todos_achados = achados_sast + achados_gitleaks + achados_trivy
+    severidades = [f["severidade"] for f in todos_achados]
 
-    md_content = f"""
+    conteudo_md = f"""
 # Relatório de Análise de Segurança
 
-**Repositório Analisado:** `{repo_name}`  
+**Repositório Analisado:** `{nome_repositorio}`  
 **Data do Scan:** {datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")}  
 
 ---
@@ -96,10 +96,10 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 
 | Métrica | Quantidade |
 |---------|------------|
-| **Total de Achados** | **{len(all_findings)}** |
-| Análise Estática (SAST) | {len(sast_f)} |
-| Vazamento de Segredos | {len(gitleaks_f)} |
-| Análise de Dependências (SCA) | {len(trivy_f)} |
+| **Total de Achados** | **{len(todos_achados)}** |
+| Análise Estática (SAST) | {len(achados_sast)} |
+| Vazamento de Segredos | {len(achados_gitleaks)} |
+| Análise de Dependências (SCA) | {len(achados_trivy)} |
 
 ---
 
@@ -119,10 +119,10 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 """
 
     # SAST
-    md_content += "\n### Análise Estática (SAST)\n"
-    if sast_f:
-        for f in sorted(sast_f, key=lambda x: x['arquivo']):
-            md_content += f"""
+    conteudo_md += "\n### Análise Estática (SAST)\n"
+    if achados_sast:
+        for f in sorted(achados_sast, key=lambda x: x['arquivo']):
+            conteudo_md += f"""
 **Severidade:** {f['severidade']}  
 **Regra:** {f['regra']}  
 **Localização:** `{f['arquivo']}:{f['linha']}`  
@@ -131,13 +131,13 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 ---
 """
     else:
-        md_content += "\nNenhum achado de SAST.\n"
+        conteudo_md += "\nNenhum achado de SAST.\n"
 
     # Segredos
-    md_content += "\n### Vazamento de Segredos\n"
-    if gitleaks_f:
-        for f in sorted(gitleaks_f, key=lambda x: x['arquivo']):
-            md_content += f"""
+    conteudo_md += "\n### Vazamento de Segredos\n"
+    if achados_gitleaks:
+        for f in sorted(achados_gitleaks, key=lambda x: x['arquivo']):
+            conteudo_md += f"""
 **Severidade:** {f['severidade']}  
 **Descrição:** {f['regra']}  
 **Localização:** `{f['arquivo']}:{f['linha']}`  
@@ -146,13 +146,13 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 ---
 """
     else:
-        md_content += "\nNenhum segredo encontrado.\n"
+        conteudo_md += "\nNenhum segredo encontrado.\n"
 
     # SCA
-    md_content += "\n### Análise de Dependências (SCA)\n"
-    if trivy_f:
-        for f in sorted(trivy_f, key=lambda x: x['pacote']):
-            md_content += f"""
+    conteudo_md += "\n### Análise de Dependências (SCA)\n"
+    if achados_trivy:
+        for f in sorted(achados_trivy, key=lambda x: x['pacote']):
+            conteudo_md += f"""
 **Severidade:** {f['severidade']}  
 **Pacote:** `{f['pacote']} (versão: {f['versao']})`  
 **Vulnerabilidade:** `{f['regra']}`  
@@ -161,10 +161,10 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 ---
 """
     else:
-        md_content += "\nNenhuma dependência vulnerável encontrada.\n"
+        conteudo_md += "\nNenhuma dependência vulnerável encontrada.\n"
 
     # Conclusão
-    md_content += """
+    conteudo_md += """
 ---
 
 ## Conclusões e Recomendações
@@ -177,28 +177,28 @@ def generate_report(repo_name, sast_f, gitleaks_f, trivy_f):
 """
 
     # Salvar arquivos
-    report_filename_md = f"relatorio-{repo_name}.md"
-    with open(report_filename_md, "w", encoding="utf-8") as f:
-        f.write(md_content)
+    arquivo_relatorio_md = f"relatorio-{nome_repositorio}.md"
+    with open(arquivo_relatorio_md, "w", encoding="utf-8") as f:
+        f.write(conteudo_md)
 
-    temp_pdf_md_filename = "temp-report-for-pdf.md"
-    with open(temp_pdf_md_filename, "w", encoding="utf-8") as f:
-        f.write(md_content)
+    arquivo_temp_pdf_md = "temp-report-for-pdf.md"
+    with open(arquivo_temp_pdf_md, "w", encoding="utf-8") as f:
+        f.write(conteudo_md)
 
 if __name__ == "__main__":
-    repo_name = sys.argv[1] if len(sys.argv) > 1 else "desconhecido"
+    nome_repositorio = sys.argv[1] if len(sys.argv) > 1 else "desconhecido"
 
     try:
-        with open("semgrep-output.json") as f: semgrep_data = json.load(f)
-    except: semgrep_data = {}
+        with open("semgrep-output.json") as f: dados_semgrep = json.load(f)
+    except: dados_semgrep = {}
     try:
-        with open("gitleaks-output.json") as f: gitleaks_data = json.load(f)
-    except: gitleaks_data = []
+        with open("gitleaks-output.json") as f: dados_gitleaks = json.load(f)
+    except: dados_gitleaks = []
     try:
-        with open("trivy-output.json") as f: trivy_data = json.load(f)
-    except: trivy_data = {}
+        with open("trivy-output.json") as f: dados_trivy = json.load(f)
+    except: dados_trivy = {}
 
-    sast = process_semgrep(semgrep_data)
-    gitleaks = process_gitleaks(gitleaks_data)
-    trivy = process_trivy(trivy_data)
-    generate_report(repo_name, sast, gitleaks, trivy)
+    achados_sast = processar_semgrep(dados_semgrep)
+    achados_gitleaks = processar_gitleaks(dados_gitleaks)
+    achados_trivy = processar_trivy(dados_trivy)
+    gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_trivy)
