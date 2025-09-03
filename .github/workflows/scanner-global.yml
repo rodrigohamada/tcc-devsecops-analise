@@ -8,7 +8,7 @@ on:
       url_repositorio:
         description: 'URL completa do repositório GitHub público a ser analisado'
         required: true
-        default: 'https://github.com/rodrigohamada/tcc-devsecops-analise'
+        default: ''
 
 jobs:
   escanear-e-gerar-relatorio:
