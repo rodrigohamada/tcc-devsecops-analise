@@ -189,13 +189,13 @@ if __name__ == "__main__":
     nome_repositorio = sys.argv[1] if len(sys.argv) > 1 else "desconhecido"
 
     try:
-        with open("semgrep-output.json") as f: dados_semgrep = json.load(f)
+        with open("saida-semgrep.json") as f: dados_semgrep = json.load(f)
     except: dados_semgrep = {}
     try:
-        with open("gitleaks-output.json") as f: dados_gitleaks = json.load(f)
+        with open("saida-gitleaks.json") as f: dados_gitleaks = json.load(f)
     except: dados_gitleaks = []
     try:
-        with open("trivy-output.json") as f: dados_trivy = json.load(f)
+        with open("saida-trivy.json") as f: dados_trivy = json.load(f)
     except: dados_trivy = {}
 
     achados_sast = processar_semgrep(dados_semgrep)
