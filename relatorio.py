@@ -1,94 +1,104 @@
 import json
 import os
 import sys
-import datetime
-import re
-from googletrans import Translator
+from datetime import datetime
 
-# Inicializa o tradutor
-tradutor = Translator()
+def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
+    resultados = {
+        "sast": [],
+        "secrets": [],
+        "sca": []
+    }
 
-def traduzir_mensagem(mensagem):
-    """Traduz mensagens de achados do inglês para português."""
-    try:
-        return tradutor.translate(mensagem, src="en", dest="pt").text
-    except Exception:
-        return mensagem  # fallback: mantém em inglês se falhar
+    # SEMGREP
+    if os.path.isfile(caminho_semgrep):
+        with open(caminho_semgrep, 'r', encoding='utf-8') as f:
+            try:
+                dados = json.load(f)
+                for item in dados.get("results", []):
+                    sev_orig = item.get("extra", {}).get("severity", "").upper()
+                    if sev_orig == "ERROR":
+                        severidade = "CRÍTICA"
+                    elif sev_orig == "WARNING":
+                        severidade = "MÉDIA"
+                    elif sev_orig == "CRITICAL":
+                        severidade = "CRÍTICA"
+                    elif sev_orig == "HIGH":
+                        severidade = "ALTA"
+                    elif sev_orig == "MEDIUM":
+                        severidade = "MÉDIA"
+                    elif sev_orig == "LOW":
+                        severidade = "BAIXA"
+                    elif sev_orig == "UNKNOWN":
+                        severidade = "DESCONHECIDA"
+                    else:
+                        severidade = "DESCONHECIDA"
 
-def formatar_texto(mensagem):
-    """Normaliza espaçamento e formatação do texto traduzido."""
-    if not mensagem:
-        return mensagem
-    # Espaço após pontuações
-    mensagem = re.sub(r'([.,;!?])([^\s])', r'\1 \2', mensagem)
-    # Remove múltiplos espaços
-    mensagem = re.sub(r'\s{2,}', ' ', mensagem)
-    # Corrige casos de "palavra.outra" → "palavra. outra"
-    mensagem = re.sub(r'([a-zA-Z])\.([A-ZÁÉÍÓÚ])', r'\1. \2', mensagem)
-    # Corrige espaços antes de vírgulas e pontos
-    mensagem = mensagem.replace(" .", ".").replace(" ,", ",")
-    return mensagem.strip()
+                    resultados["sast"].append({
+                        "severidade": severidade,
+                        "regra": item.get("check_id", ""),
+                        "localizacao": f"{item.get('path', '')}:{item.get('start', {}).get('line', '')}",
+                        "descricao": item.get("extra", {}).get("message", "")
+                    })
+            except json.JSONDecodeError:
+                print("Aviso: JSON do Semgrep inválido.")
 
-def processar_semgrep(dados):
-    """Extrai e formata os achados do Semgrep."""
-    achados = []
-    for resultado in dados.get("results", []):
-        mensagem = resultado["extra"]["message"].split('\n')[0]
-        mensagem_traduzida = traduzir_mensagem(mensagem)
-        mensagem_formatada = formatar_texto(mensagem_traduzida)
-        achados.append({
-            "tipo": "SAST",
-            "regra": resultado["check_id"],
-            "severidade": resultado["extra"]["severity"],
-            "arquivo": resultado["path"],
-            "linha": resultado["start"]["line"],
-            "mensagem": mensagem_formatada
-        })
-    return achados
+    # GITLEAKS
+    if os.path.isfile(caminho_gitleaks):
+        with open(caminho_gitleaks, 'r', encoding='utf-8') as f:
+            try:
+                dados = json.load(f)
+                for item in dados:
+                    resultados["secrets"].append({
+                        "severidade": "CRÍTICA",
+                        "descricao": item.get("Description", "Segredo exposto"),
+                        "localizacao": f"{item.get('File', '')}:{item.get('StartLine', '')}",
+                        "padrao": item.get("Secret", "N/A")
+                    })
+            except json.JSONDecodeError:
+                print("Aviso: JSON do Gitleaks inválido.")
 
-def processar_gitleaks(dados):
-    """Extrai e formata os achados do Gitleaks."""
-    achados = []
-    for resultado in dados:
-        achados.append({
-            "tipo": "SEGREDO",
-            "regra": resultado["Description"],
-            "severidade": "CRÍTICA",
-            "arquivo": resultado["File"],
-            "linha": resultado["StartLine"],
-            "padrao": resultado["Secret"][:6] + '...'
-        })
-    return achados
+    # TRIVY
+    if os.path.isfile(caminho_trivy):
+        with open(caminho_trivy, 'r', encoding='utf-8') as f:
+            try:
+                dados = json.load(f)
+                resultados_trivy = dados.get("Results", [])
+                for r in resultados_trivy:
+                    for v in r.get("Vulnerabilities", []):
+                        sev = v.get("Severity", "UNKNOWN").upper()
+                        if sev == "CRITICAL":
+                            severidade = "CRÍTICA"
+                        elif sev == "HIGH":
+                            severidade = "ALTA"
+                        elif sev == "MEDIUM":
+                            severidade = "MÉDIA"
+                        elif sev == "LOW":
+                            severidade = "BAIXA"
+                        else:
+                            severidade = "DESCONHECIDA"
 
-def processar_trivy(dados):
-    """Extrai e formata os achados do Trivy."""
-    achados = []
-    if not dados.get("Results"):
-        return []
-    for resultado in dados["Results"]:
-        alvo_arquivo = os.path.basename(resultado.get("Target", ""))
-        if "requirements.txt" in alvo_arquivo:
-            for vulnerabilidade in resultado.get("Vulnerabilities", []):
-                achados.append({
-                    "tipo": "SCA",
-                    "regra": vulnerabilidade.get("VulnerabilityID", "N/A"),
-                    "severidade": vulnerabilidade.get("Severity", "DESCONHECIDA"),
-                    "pacote": vulnerabilidade.get("PkgName", "N/A"),
-                    "versao": vulnerabilidade.get("InstalledVersion", "N/A"),
-                    "titulo": vulnerabilidade.get("Title", "N/A")
-                })
-    return achados
+                        resultados["sca"].append({
+                            "severidade": severidade,
+                            "descricao": f"{v.get('Title', 'Vuln')} - {v.get('PkgName', '')}@{v.get('InstalledVersion', '')}"
+                        })
+            except json.JSONDecodeError:
+                print("Aviso: JSON do Trivy inválido.")
 
-def gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_trivy):
-    """Gera o conteúdo do relatório em Markdown traduzido e formatado."""
-    todos_achados = achados_sast + achados_gitleaks + achados_trivy
-    severidades = [f["severidade"] for f in todos_achados]
+    return resultados
 
-    conteudo_md = f"""
+def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
+    todos = resultados['sast'] + resultados['secrets'] + resultados['sca']
+    dist = {s: 0 for s in ["CRÍTICA", "ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]}
+    for f in todos:
+        dist[f.get("severidade", "DESCONHECIDA")] += 1
+
+    with open(caminho_saida, 'w', encoding='utf-8') as f:
+        f.write(f"""
 # Relatório de Análise de Segurança
 
 **Repositório Analisado:** `{nome_repositorio}`  
-**Data do Scan:** {datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")}  
+**Data do Scan:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
 
 ---
 
@@ -96,10 +106,10 @@ def gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_tr
 
 | Métrica | Quantidade |
 |---------|------------|
-| **Total de Achados** | **{len(todos_achados)}** |
-| Análise Estática (SAST) | {len(achados_sast)} |
-| Vazamento de Segredos | {len(achados_gitleaks)} |
-| Análise de Dependências (SCA) | {len(achados_trivy)} |
+| **Total de Achados** | **{len(todos)}** |
+| Análise Estática (SAST) | {len(resultados['sast'])} |
+| Vazamento de Segredos | {len(resultados['secrets'])} |
+| Análise de Dependências (SCA) | {len(resultados['sca'])} |
 
 ---
 
@@ -107,64 +117,62 @@ def gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_tr
 
 | Severidade | Quantidade |
 |------------|------------|
-| CRÍTICA | {severidades.count("CRITICAL") + severidades.count("CRÍTICA")} |
-| ALTA | {severidades.count("HIGH") + severidades.count("ALTA")} |
-| MÉDIA | {severidades.count("MEDIUM") + severidades.count("MÉDIA")} |
-| BAIXA | {severidades.count("LOW") + severidades.count("BAIXA")} |
-| DESCONHECIDA | {severidades.count("UNKNOWN") + severidades.count("DESCONHECIDA")} |
+| CRÍTICA | {dist['CRÍTICA']} |
+| ALTA | {dist['ALTA']} |
+| MÉDIA | {dist['MÉDIA']} |
+| BAIXA | {dist['BAIXA']} |
+| DESCONHECIDA | {dist['DESCONHECIDA']} |
 
 ---
 
 ## Detalhamento dos Achados
-"""
 
-    # SAST
-    conteudo_md += "\n### Análise Estática (SAST)\n"
-    if achados_sast:
-        for f in sorted(achados_sast, key=lambda x: x['arquivo']):
-            conteudo_md += f"""
-**Severidade:** {f['severidade']}  
-**Regra:** {f['regra']}  
-**Localização:** `{f['arquivo']}:{f['linha']}`  
-**Descrição:** {f['mensagem']}  
-
----
-"""
-    else:
-        conteudo_md += "\nNenhum achado de SAST.\n"
-
-    # Segredos
-    conteudo_md += "\n### Vazamento de Segredos\n"
-    if achados_gitleaks:
-        for f in sorted(achados_gitleaks, key=lambda x: x['arquivo']):
-            conteudo_md += f"""
-**Severidade:** {f['severidade']}  
-**Descrição:** {f['regra']}  
-**Localização:** `{f['arquivo']}:{f['linha']}`  
-**Padrão identificado:** `{f['padrao']}`  
+### Análise Estática (SAST)
+""")
+        if resultados['sast']:
+            for fnd in resultados['sast']:
+                f.write(f"""
+**Severidade:** {fnd['severidade']}  
+**Regra:** {fnd['regra']}  
+**Localização:** `{fnd['localizacao']}`  
+**Descrição:** {fnd['descricao']}  
 
 ---
-"""
-    else:
-        conteudo_md += "\nNenhum segredo encontrado.\n"
+""")
+        else:
+            f.write("Nenhum achado SAST encontrado.\n")
 
-    # SCA
-    conteudo_md += "\n### Análise de Dependências (SCA)\n"
-    if achados_trivy:
-        for f in sorted(achados_trivy, key=lambda x: x['pacote']):
-            conteudo_md += f"""
-**Severidade:** {f['severidade']}  
-**Pacote:** `{f['pacote']} (versão: {f['versao']})`  
-**Vulnerabilidade:** `{f['regra']}`  
-**Título:** {f['titulo']}  
+        f.write("""
+### Vazamento de Segredos
+""")
+        if resultados['secrets']:
+            for fnd in resultados['secrets']:
+                f.write(f"""
+**Severidade:** {fnd['severidade']}  
+**Descrição:** {fnd['descricao']}  
+**Localização:** `{fnd['localizacao']}`  
+**Padrão identificado:** `{fnd['padrao'][:6]}...`  
 
 ---
-"""
-    else:
-        conteudo_md += "\nNenhuma dependência vulnerável encontrada.\n"
+""")
+        else:
+            f.write("Nenhum segredo encontrado.\n")
 
-    # Conclusão
-    conteudo_md += """
+        f.write("""
+### Análise de Dependências (SCA)
+""")
+        if resultados['sca']:
+            for fnd in resultados['sca']:
+                f.write(f"""
+**Severidade:** {fnd['severidade']}  
+**Descrição:** {fnd['descricao']}  
+
+---
+""")
+        else:
+            f.write("Nenhuma vulnerabilidade em dependências.\n")
+
+        f.write("""
 ---
 
 ## Conclusões e Recomendações
@@ -174,31 +182,19 @@ def gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_tr
 - Evitar interpolação insegura em scripts e workflows.  
 - Aplicar boas práticas de desenvolvimento seguro em Flask e SQL.  
 - Reexecutar os scans após aplicar correções.  
-"""
-
-    # Salvar arquivos
-    arquivo_relatorio_md = f"relatorio-{nome_repositorio}.md"
-    with open(arquivo_relatorio_md, "w", encoding="utf-8") as f:
-        f.write(conteudo_md)
-
-    arquivo_temp_pdf_md = "temp-report-for-pdf.md"
-    with open(arquivo_temp_pdf_md, "w", encoding="utf-8") as f:
-        f.write(conteudo_md)
+""")
 
 if __name__ == "__main__":
-    nome_repositorio = sys.argv[1] if len(sys.argv) > 1 else "desconhecido"
+    if len(sys.argv) < 2:
+        print("Erro: nome do repositório não informado.")
+        sys.exit(1)
 
-    try:
-        with open("saida-semgrep.json") as f: dados_semgrep = json.load(f)
-    except: dados_semgrep = {}
-    try:
-        with open("saida-gitleaks.json") as f: dados_gitleaks = json.load(f)
-    except: dados_gitleaks = []
-    try:
-        with open("saida-trivy.json") as f: dados_trivy = json.load(f)
-    except: dados_trivy = {}
+    nome_repositorio = sys.argv[1]
+    caminho_semgrep = "saida-semgrep.json"
+    caminho_gitleaks = "saida-gitleaks.json"
+    caminho_trivy = "saida-trivy.json"
+    caminho_saida = f"relatorio-{nome_repositorio}.md"
 
-    achados_sast = processar_semgrep(dados_semgrep)
-    achados_gitleaks = processar_gitleaks(dados_gitleaks)
-    achados_trivy = processar_trivy(dados_trivy)
-    gerar_relatorio(nome_repositorio, achados_sast, achados_gitleaks, achados_trivy)
+    resultados = carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy)
+    gerar_relatorio(nome_repositorio, resultados, caminho_saida)
+    print(f"Relatório gerado: {caminho_saida}")
