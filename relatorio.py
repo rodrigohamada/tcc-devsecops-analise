@@ -197,4 +197,9 @@ if __name__ == "__main__":
 
     resultados = carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy)
     gerar_relatorio(nome_repositorio, resultados, caminho_saida)
+
+    # Também gera cópia para o Pandoc usar no PDF
+    with open("temp-report-for-pdf.md", "w", encoding="utf-8") as temp:
+        temp.write(open(caminho_saida, encoding="utf-8").read())
+
     print(f"Relatório gerado: {caminho_saida}")
