@@ -2,6 +2,15 @@ import json
 import os
 import sys
 from datetime import datetime
+from googletrans import Translator
+
+tradutor = Translator()
+
+def traduzir_mensagem(mensagem):
+    try:
+        return tradutor.translate(mensagem, src="en", dest="pt").text
+    except:
+        return mensagem
 
 def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
     resultados = {
@@ -34,11 +43,12 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
                     else:
                         severidade = "DESCONHECIDA"
 
+                    descricao = item.get("extra", {}).get("message", "")
                     resultados["sast"].append({
                         "severidade": severidade,
                         "regra": item.get("check_id", ""),
                         "localizacao": f"{item.get('path', '')}:{item.get('start', {}).get('line', '')}",
-                        "descricao": item.get("extra", {}).get("message", "")
+                        "descricao": traduzir_mensagem(descricao)
                     })
             except json.JSONDecodeError:
                 print("Aviso: JSON do Semgrep inválido.")
@@ -49,9 +59,10 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
             try:
                 dados = json.load(f)
                 for item in dados:
+                    descricao = item.get("Description", "Segredo exposto")
                     resultados["secrets"].append({
                         "severidade": "CRÍTICA",
-                        "descricao": item.get("Description", "Segredo exposto"),
+                        "descricao": traduzir_mensagem(descricao),
                         "localizacao": f"{item.get('File', '')}:{item.get('StartLine', '')}",
                         "padrao": item.get("Secret", "N/A")
                     })
@@ -78,9 +89,14 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
                         else:
                             severidade = "DESCONHECIDA"
 
+                        titulo = v.get('Title', 'Vulnerabilidade')
+                        pacote = v.get('PkgName', '')
+                        versao = v.get('InstalledVersion', '')
+                        descricao = f"{titulo} - {pacote}@{versao}"
+
                         resultados["sca"].append({
                             "severidade": severidade,
-                            "descricao": f"{v.get('Title', 'Vuln')} - {v.get('PkgName', '')}@{v.get('InstalledVersion', '')}"
+                            "descricao": traduzir_mensagem(descricao)
                         })
             except json.JSONDecodeError:
                 print("Aviso: JSON do Trivy inválido.")
