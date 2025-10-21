@@ -23,21 +23,26 @@ jobs:
       - name: 2. Validar URL do repositório
         run: |
           if [[ "${{ github.event.inputs.url_repositorio }}" == *"/blob/"* ]]; then
-            echo "::error::URL inválida. Por favor, forneça a URL principal do repositório (ex: https://github.com/usuario/repositorio), e não a URL de um arquivo específico."
+            echo "::error::URL inválida. Forneça a URL principal do repositório (ex: https://github.com/usuario/repositorio)"
             exit 1
           fi
-          echo "URL válida para análise."
+          echo "✅ URL válida para análise."
 
       - name: 3. Fazer checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 4. Instalar ferramentas necessárias (LaTeX, Pandoc, Gitleaks, Semgrep, Trivy)
+      - name: 4. Instalar ferramentas necessárias (LaTeX, Pandoc, Semgrep, Gitleaks, Trivy)
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra texlive-xetex texlive-fonts-recommended texlive-fonts-extra docker.io
-          sudo snap install gitleaks
-          sudo pipx install semgrep
+          sudo apt-get install -y python3-pip pandoc \
+            texlive-latex-base texlive-latex-extra texlive-xetex \
+            texlive-fonts-recommended texlive-fonts-extra
+          
+          # Instalar ferramentas de segurança
           sudo pip install googletrans==4.0.0-rc1
+          sudo pipx install semgrep
+          curl -sSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sudo bash
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
       - name: 5. Clonar repositório alvo
         run: |
@@ -48,27 +53,30 @@ jobs:
           cd repositorio_alvo
           echo "🔍 Executando Semgrep..."
           semgrep scan --config auto --json > ../saida-semgrep.json || true
+
           echo "🔐 Executando Gitleaks..."
           gitleaks detect --report-format json --report-path ../saida-gitleaks.json || true
-          echo "📦 Executando Trivy (SCA)..."
-          docker run --rm -v "$(pwd)":/pasta-escanear aquasec/trivy:latest fs \
-            --security-checks vuln \
-            --format json \
-            --output /pasta-escanear/../saida-trivy.json \
-            /pasta-escanear || true
 
-      - name: 7. Verificar arquivos gerados
+          echo "📦 Executando Trivy (SCA)..."
+          trivy fs --security-checks vuln --format json \
+            --output ../saida-trivy.json .
+
+      - name: 7. Exibir resultados gerados
         run: |
           echo "📁 Listando arquivos gerados:"
-          ls -lh ../ || ls -lh .
-          echo "🔍 Primeiras linhas de cada resultado:"
-          head -n 20 ../saida-trivy.json || echo "⚠️ Nenhum resultado Trivy encontrado"
-          head -n 10 ../saida-semgrep.json || true
-          head -n 10 ../saida-gitleaks.json || true
+          ls -lh .
+          echo "🔍 Primeiras linhas dos relatórios:"
+          head -n 15 saida-trivy.json || true
+          head -n 10 saida-semgrep.json || true
+          head -n 10 saida-gitleaks.json || true
 
       - name: 8. Instalar dependências do Python
         run: |
-          pip install -r requirements.txt || echo "⚠️ Nenhum requirements.txt encontrado; continuando."
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "⚠️ Nenhum requirements.txt encontrado, continuando..."
+          fi
 
       - name: 9. Gerar relatório em Markdown
         run: |
