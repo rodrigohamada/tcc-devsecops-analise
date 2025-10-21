@@ -13,7 +13,7 @@ on:
 jobs:
   escanear-e-gerar-relatorio:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 1. Extrair nome do repositório
         run: |
@@ -31,40 +31,60 @@ jobs:
       - name: 3. Fazer checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 4. Instalar ferramentas necessárias (LaTeX, Pandoc, Gitleaks, Semgrep)
+      - name: 4. Instalar ferramentas necessárias (LaTeX, Pandoc, Gitleaks, Semgrep, Trivy)
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra texlive-xetex gitleaks
+          sudo apt-get install -y python3-pip pandoc texlive-latex-base texlive-latex-extra texlive-xetex texlive-fonts-recommended texlive-fonts-extra docker.io
+          sudo snap install gitleaks
           sudo pipx install semgrep
+          sudo pip install googletrans==4.0.0-rc1
 
       - name: 5. Clonar repositório alvo
         run: |
           git clone ${{ github.event.inputs.url_repositorio }} repositorio_alvo --depth 1
-      
+
       - name: 6. Executar Scans de Segurança
         run: |
           cd repositorio_alvo
+          echo "🔍 Executando Semgrep..."
           semgrep scan --config auto --json > ../saida-semgrep.json || true
+          echo "🔐 Executando Gitleaks..."
           gitleaks detect --report-format json --report-path ../saida-gitleaks.json || true
-          docker run --rm -v $(pwd):/pasta-escanear aquasec/trivy:latest fs --format json --output /pasta-escanear/../saida-trivy.json /pasta-escanear || true
+          echo "📦 Executando Trivy (SCA)..."
+          docker run --rm -v "$(pwd)":/pasta-escanear aquasec/trivy:latest fs \
+            --security-checks vuln \
+            --format json \
+            --output /pasta-escanear/../saida-trivy.json \
+            /pasta-escanear || true
 
-      - name: 7. Instalar dependências do Python
+      - name: 7. Verificar arquivos gerados
         run: |
-          pip install -r requirements.txt
+          echo "📁 Listando arquivos gerados:"
+          ls -lh ../ || ls -lh .
+          echo "🔍 Primeiras linhas de cada resultado:"
+          head -n 20 ../saida-trivy.json || echo "⚠️ Nenhum resultado Trivy encontrado"
+          head -n 10 ../saida-semgrep.json || true
+          head -n 10 ../saida-gitleaks.json || true
 
-      - name: 8. Gerar relatório em Markdown
+      - name: 8. Instalar dependências do Python
+        run: |
+          pip install -r requirements.txt || echo "⚠️ Nenhum requirements.txt encontrado; continuando."
+
+      - name: 9. Gerar relatório em Markdown
         run: |
           python3 relatorio.py ${{ env.NOME_REPOSITORIO }}
-      
-      - name: 9. Converter relatório para PDF
+
+      - name: 10. Converter relatório para PDF (XeLaTeX)
         run: |
           pandoc \
             -V geometry:"a4paper, margin=1in" \
+            -V mainfont="DejaVu Sans" \
+            --pdf-engine=xelatex \
             --table-of-contents \
             "temp-report-for-pdf.md" \
             -o "relatorio-${{ env.NOME_REPOSITORIO }}.pdf"
 
-      - name: 10. Publicar relatórios finais (MD e PDF)
+      - name: 11. Publicar relatórios finais (MD e PDF)
         uses: actions/upload-artifact@v4
         with:
           name: Relatorio-Seguranca-${{ env.NOME_REPOSITORIO }}
