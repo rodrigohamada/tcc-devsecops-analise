@@ -31,18 +31,21 @@ jobs:
       - name: 3. Fazer checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 4. Instalar ferramentas necessárias (LaTeX, Pandoc, Semgrep, Gitleaks, Trivy)
+      - name: 4. Instalar ferramentas necessárias
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip pandoc \
-            texlive-latex-base texlive-latex-extra texlive-xetex \
-            texlive-fonts-recommended texlive-fonts-extra
+          sudo apt-get install -y \
+            python3-pip pandoc texlive-latex-base texlive-latex-extra \
+            texlive-xetex texlive-fonts-recommended texlive-fonts-extra \
+            texlive-plain-generic curl
           
           # Instalar ferramentas de segurança
-          sudo pip install googletrans==4.0.0-rc1
           sudo pipx install semgrep
           curl -sSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sudo bash
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+
+          # Instalar googletrans com permissão para sobrescrever pacotes do sistema
+          pip install --no-cache-dir --break-system-packages googletrans==4.0.0-rc1
 
       - name: 5. Clonar repositório alvo
         run: |
@@ -70,10 +73,10 @@ jobs:
           head -n 10 saida-semgrep.json || true
           head -n 10 saida-gitleaks.json || true
 
-      - name: 8. Instalar dependências do Python
+      - name: 8. Instalar dependências do Python (se existirem)
         run: |
           if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+            pip install --no-cache-dir --break-system-packages -r requirements.txt
           else
             echo "⚠️ Nenhum requirements.txt encontrado, continuando..."
           fi
@@ -92,7 +95,7 @@ jobs:
             "temp-report-for-pdf.md" \
             -o "relatorio-${{ env.NOME_REPOSITORIO }}.pdf"
 
-      - name: 11. Publicar relatórios finais (MD e PDF)
+      - name: 11. Publicar relatórios finais
         uses: actions/upload-artifact@v4
         with:
           name: Relatorio-Seguranca-${{ env.NOME_REPOSITORIO }}
