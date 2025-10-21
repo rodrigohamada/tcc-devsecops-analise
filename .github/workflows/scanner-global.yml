@@ -66,17 +66,21 @@ jobs:
           echo "🔐 Executando Gitleaks..."
           gitleaks detect --report-format json --report-path ../saida-gitleaks.json || true
 
-          echo "📦 Executando Trivy (SCA)..."
+          echo "📦 Executando Trivy (SCA - dependências Python)..."
           trivy fs --security-checks vuln --format json --output ../saida-trivy.json .
+
+          echo "🐳 Executando Trivy (Imagem base Docker)..."
+          trivy image --format json --output ../saida-trivy-imagem.json python:3.7-slim || true
 
       - name: 7. Exibir resultados gerados
         run: |
           echo "📁 Listando arquivos gerados:"
-          ls -lh .
+          ls -lh ..
           echo "🔍 Primeiras linhas dos relatórios:"
-          head -n 15 saida-trivy.json || true
-          head -n 10 saida-semgrep.json || true
-          head -n 10 saida-gitleaks.json || true
+          head -n 15 ../saida-trivy.json || true
+          head -n 10 ../saida-trivy-imagem.json || true
+          head -n 10 ../saida-semgrep.json || true
+          head -n 10 ../saida-gitleaks.json || true
 
       - name: 8. Instalar dependências do Python (se existirem)
         run: |
