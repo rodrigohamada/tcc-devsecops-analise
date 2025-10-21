@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from googletrans import Translator
 
 tradutor = Translator()
@@ -10,7 +11,7 @@ tradutor = Translator()
 def traduzir_mensagem(mensagem):
     """Traduz texto de EN → PT, com fallback para original."""
     try:
-        texto = mensagem.strip()
+        texto = (mensagem or "").strip()
         if not texto:
             return ""
         traducao = tradutor.translate(texto, src="en", dest="pt").text
@@ -77,14 +78,14 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy, caminh
             })
 
     # ========== TRIVY (SCA - dependências Python) ==========
-    dados = _safe_load_json(caminho_trivy)
     print("\n📊 Trivy (SCA): análise de dependências Python")
+    dados = _safe_load_json(caminho_trivy)
     resultados_sca = processar_trivy(dados)
     resultados["sca"].extend(resultados_sca)
 
     # ========== TRIVY (Imagem Docker) ==========
-    dados_img = _safe_load_json(caminho_trivy_imagem)
     print("\n🐳 Trivy (Imagem): análise de vulnerabilidades da imagem base")
+    dados_img = _safe_load_json(caminho_trivy_imagem)
     resultados_img = processar_trivy(dados_img, is_imagem=True)
     resultados["imagem"].extend(resultados_img)
 
@@ -92,27 +93,41 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy, caminh
 
 
 def processar_trivy(dados, is_imagem=False):
-    """Processa JSON do Trivy (FS ou Imagem)."""
+    """Processa JSON do Trivy (FS ou Imagem) com deduplicação."""
     achados = []
+    vistos = set()  # controle de duplicatas
+
     if not dados:
         print("⚠️  Nenhum resultado do Trivy encontrado.")
         return achados
 
+    resultados_trivy = []
     if isinstance(dados, dict):
         resultados_trivy = dados.get("Results", [])
     elif isinstance(dados, list):
         resultados_trivy = dados
-    else:
-        resultados_trivy = []
 
     print(f"   → {len(resultados_trivy)} alvos analisados.")
     total = 0
+    duplicados = 0
+
     for idx, r in enumerate(resultados_trivy):
         target = r.get("Target", f"alvo-{idx+1}")
         vulns = r.get("Vulnerabilities", [])
         print(f"     - {target}: {len(vulns)} vulnerabilidade(s)")
         for v in vulns:
             total += 1
+            vuln_id = v.get("VulnerabilityID", "N/A")
+            pacote = v.get("PkgName", "")
+            versao_instalada = v.get("InstalledVersion", "")
+            versao_corrigida = v.get("FixedVersion", "N/A")
+
+            chave = (vuln_id, pacote, versao_instalada, versao_corrigida, target)
+            if chave in vistos:
+                duplicados += 1
+                continue
+            vistos.add(chave)
+
             sev = (v.get("Severity") or "UNKNOWN").upper()
             mapeamento = {
                 "CRITICAL": "CRÍTICA",
@@ -124,10 +139,6 @@ def processar_trivy(dados, is_imagem=False):
             severidade = mapeamento.get(sev, "DESCONHECIDA")
 
             titulo = traduzir_mensagem(v.get('Title', 'Vulnerabilidade'))
-            vuln_id = v.get('VulnerabilityID', 'N/A')
-            pacote = v.get('PkgName', '')
-            versao_instalada = v.get('InstalledVersion', '')
-            versao_corrigida = v.get('FixedVersion', 'N/A')
             descricao_parts = [titulo]
             if pacote:
                 descricao_parts.append(f"Pacote: {pacote}")
@@ -148,11 +159,15 @@ def processar_trivy(dados, is_imagem=False):
                 "descricao": traduzir_mensagem(descricao)
             })
 
-    print(f"✅ Total de vulnerabilidades {('na imagem' if is_imagem else 'em dependências')} processadas: {total}")
+    print(f"✅ Total de vulnerabilidades {('na imagem' if is_imagem else 'em dependências')} processadas: {len(achados)} (ignoradas {duplicados} duplicadas)")
     return achados
 
 
 def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
+    """Gera relatório consolidado."""
+    # Data e hora em fuso de Brasília
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+
     todos = resultados['sast'] + resultados['secrets'] + resultados['sca'] + resultados['imagem']
     dist = {s: 0 for s in ["CRÍTICA", "ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]}
     for f in todos:
@@ -162,7 +177,7 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
         f.write(f"""# Relatório de Análise de Segurança
 
 **Repositório Analisado:** `{nome_repositorio}`  
-**Data do Scan:** {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+**Data do Scan:** {agora.strftime('%d/%m/%Y %H:%M:%S')} (Horário de Brasília)
 
 ---
 
