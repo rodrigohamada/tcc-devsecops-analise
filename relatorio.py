@@ -25,11 +25,11 @@ def _safe_load_json(path):
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"⚠️  Arquivo não encontrado: {path}")
+        print(f"Arquivo não encontrado: {path}")
     except json.JSONDecodeError as e:
-        print(f"⚠️  JSON inválido em {path}: {e}")
+        print(f"JSON inválido em {path}: {e}")
     except Exception as e:
-        print(f"⚠️  Erro ao ler {path}: {e}")
+        print(f"Erro ao ler {path}: {e}")
     return None
 
 
@@ -78,13 +78,13 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy, caminh
             })
 
     # ========== TRIVY (SCA - dependências Python) ==========
-    print("\n📊 Trivy (SCA): análise de dependências Python")
+    print("\n Trivy (SCA): análise de dependências Python")
     dados = _safe_load_json(caminho_trivy)
     resultados_sca = processar_trivy(dados)
     resultados["sca"].extend(resultados_sca)
 
     # ========== TRIVY (Imagem Docker) ==========
-    print("\n🐳 Trivy (Imagem): análise de vulnerabilidades da imagem base")
+    print("\n Trivy (Imagem): análise de vulnerabilidades da imagem base")
     dados_img = _safe_load_json(caminho_trivy_imagem)
     resultados_img = processar_trivy(dados_img, is_imagem=True)
     resultados["imagem"].extend(resultados_img)
@@ -98,7 +98,7 @@ def processar_trivy(dados, is_imagem=False):
     vistos = set()  # controle de duplicatas
 
     if not dados:
-        print("⚠️  Nenhum resultado do Trivy encontrado.")
+        print("  Nenhum resultado do Trivy encontrado.")
         return achados
 
     resultados_trivy = []
@@ -159,7 +159,7 @@ def processar_trivy(dados, is_imagem=False):
                 "descricao": traduzir_mensagem(descricao)
             })
 
-    print(f"✅ Total de vulnerabilidades {('na imagem' if is_imagem else 'em dependências')} processadas: {len(achados)} (ignoradas {duplicados} duplicadas)")
+    print(f" Total de vulnerabilidades {('na imagem' if is_imagem else 'em dependências')} processadas: {len(achados)} (ignoradas {duplicados} duplicadas)")
     return achados
 
 
@@ -266,7 +266,7 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
 - Adotar práticas DevSecOps contínuas no pipeline de CI/CD.  
 """)
 
-    print(f"\n✅ Relatório gerado com sucesso: {caminho_saida}")
+    print(f"\n Relatório gerado com sucesso: {caminho_saida}")
 
 
 def _escrever_vulns(f, vulnerabilidades):
@@ -312,7 +312,7 @@ if __name__ == "__main__":
     caminho_trivy_imagem = "saida-trivy-imagem.json"
     caminho_saida = f"relatorio-{nome_repositorio}.md"
 
-    print(f"\n🔍 Iniciando geração de relatório para: {nome_repositorio}")
+    print(f"\n Iniciando geração de relatório para: {nome_repositorio}")
     print("=" * 60)
 
     resultados = carregar_resultados(
@@ -325,4 +325,4 @@ if __name__ == "__main__":
     with open("temp-report-for-pdf.md", "w", encoding="utf-8") as temp:
         temp.write(open(caminho_saida, encoding="utf-8").read())
 
-    print(f"📄 Relatório salvo: {caminho_saida}")
+    print(f" Relatório salvo: {caminho_saida}")
