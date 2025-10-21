@@ -29,7 +29,6 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
                 for item in dados.get("results", []):
                     sev_orig = item.get("extra", {}).get("severity", "").upper()
                     
-                    # Mapear severidade
                     mapeamento_severidade = {
                         "ERROR": "CRÍTICA",
                         "CRITICAL": "CRÍTICA",
@@ -90,8 +89,6 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
                     
                     for v in vulns:
                         sev = v.get("Severity", "UNKNOWN").upper()
-                        
-                        # Mapear severidade
                         mapeamento_severidade = {
                             "CRITICAL": "CRÍTICA",
                             "HIGH": "ALTA",
@@ -101,14 +98,12 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
                         }
                         severidade = mapeamento_severidade.get(sev, "DESCONHECIDA")
 
-                        # Extrair informações da vulnerabilidade
                         titulo = v.get('Title', 'Vulnerabilidade')
                         vuln_id = v.get('VulnerabilityID', 'N/A')
                         pacote = v.get('PkgName', '')
                         versao_instalada = v.get('InstalledVersion', '')
                         versao_corrigida = v.get('FixedVersion', 'N/A')
                         
-                        # Construir descrição detalhada
                         descricao_parts = [titulo]
                         if pacote:
                             descricao_parts.append(f"Pacote: {pacote}")
@@ -170,17 +165,17 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
 
 | Severidade | Quantidade |
 |------------|------------|
-| 🔴 CRÍTICA | {dist['CRÍTICA']} |
-| 🟠 ALTA | {dist['ALTA']} |
-| 🟡 MÉDIA | {dist['MÉDIA']} |
-| 🟢 BAIXA | {dist['BAIXA']} |
-| ⚪ DESCONHECIDA | {dist['DESCONHECIDA']} |
+| CRÍTICA | {dist['CRÍTICA']} |
+| ALTA | {dist['ALTA']} |
+| MÉDIA | {dist['MÉDIA']} |
+| BAIXA | {dist['BAIXA']} |
+| DESCONHECIDA | {dist['DESCONHECIDA']} |
 
 ---
 
 ## Detalhamento dos Achados
 
-### 🔍 Análise Estática (SAST)
+### Análise Estática (SAST)
 """)
         if resultados['sast']:
             for idx, fnd in enumerate(resultados['sast'], 1):
@@ -195,10 +190,10 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
 ---
 """)
         else:
-            f.write("\n✅ Nenhum achado SAST encontrado.\n")
+            f.write("\nNenhum achado SAST encontrado.\n")
 
         f.write("""
-### 🔐 Vazamento de Segredos
+### Vazamento de Segredos
 """)
         if resultados['secrets']:
             for idx, fnd in enumerate(resultados['secrets'], 1):
@@ -213,23 +208,18 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
 ---
 """)
         else:
-            f.write("\n✅ Nenhum segredo encontrado.\n")
+            f.write("\nNenhum segredo encontrado.\n")
 
         f.write("""
-### 📦 Análise de Dependências (SCA)
+### Análise de Dependências (SCA)
 """)
         if resultados['sca']:
-            # Agrupar por severidade
             sca_por_severidade = {}
             for fnd in resultados['sca']:
                 sev = fnd['severidade']
-                if sev not in sca_por_severidade:
-                    sca_por_severidade[sev] = []
-                sca_por_severidade[sev].append(fnd)
+                sca_por_severidade.setdefault(sev, []).append(fnd)
             
-            # Ordem de severidade
             ordem_severidade = ["CRÍTICA", "ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]
-            
             contador_global = 1
             for severidade in ordem_severidade:
                 if severidade in sca_por_severidade:
@@ -250,59 +240,54 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
 """)
                         contador_global += 1
         else:
-            f.write("\n✅ Nenhuma vulnerabilidade em dependências encontrada.\n")
+            f.write("\nNenhuma vulnerabilidade em dependências encontrada.\n")
 
         f.write(f"""
 ---
 
-## 📋 Conclusões e Recomendações
+## Conclusões e Recomendações
 
 ### Ações Imediatas (Severidade Crítica: {dist['CRÍTICA']})
 """)
         
         if dist['CRÍTICA'] > 0:
             f.write("""
-- 🔴 **Prioridade Máxima**: Corrigir todas as vulnerabilidades críticas imediatamente
-- 🔐 **Segredos Expostos**: Revogar e rotacionar todos os segredos encontrados
-- 🛡️ **Validação de Entrada**: Implementar sanitização adequada em todas as entradas de usuário
-- 🔄 **Atualização de Dependências**: Atualizar pacotes vulneráveis para versões seguras
+- Prioridade máxima: corrigir todas as vulnerabilidades críticas imediatamente
+- Revogar e rotacionar todos os segredos expostos
+- Implementar sanitização adequada nas entradas de usuário
+- Atualizar dependências vulneráveis para versões seguras
 """)
         else:
-            f.write("\n✅ Nenhuma vulnerabilidade crítica encontrada.\n")
+            f.write("\nNenhuma vulnerabilidade crítica encontrada.\n")
 
         f.write("""
 ### Boas Práticas Gerais
 
 1. **Desenvolvimento Seguro**
-   - Evitar interpolação insegura em scripts e workflows
-   - Aplicar validação e sanitização de entrada
-   - Usar consultas parametrizadas para prevenir SQL Injection
-   - Evitar uso de `eval()` e funções similares com dados não confiáveis
+   - Validar e sanitizar entradas
+   - Usar consultas parametrizadas
+   - Evitar funções inseguras como eval()
 
 2. **Gerenciamento de Segredos**
-   - Nunca commitar credenciais no código-fonte
-   - Usar variáveis de ambiente ou gerenciadores de segredos
-   - Implementar rotação regular de credenciais
+   - Não commitar credenciais
+   - Usar gerenciadores de segredos
+   - Rotacionar periodicamente
 
 3. **Dependências**
-   - Manter dependências atualizadas regularmente
-   - Usar ferramentas de análise de dependências no CI/CD
-   - Monitorar avisos de segurança de bibliotecas utilizadas
+   - Atualizar regularmente
+   - Usar ferramentas de análise no CI/CD
 
-4. **Configuração de Produção**
-   - Desabilitar modo debug em produção
-   - Usar configurações específicas por ambiente
-   - Implementar logging e monitoramento adequados
+4. **Configuração**
+   - Desativar modo debug em produção
+   - Aplicar logging e monitoramento adequados
 
 5. **Revalidação**
-   - Reexecutar os scans após aplicar correções
-   - Implementar análises de segurança no pipeline de CI/CD
-   - Realizar auditorias de segurança periódicas
+   - Reexecutar scans após correções
+   - Realizar auditorias periódicas
 
 ---
 
-**Relatório gerado por Scanner de Segurança Universal**  
-*Este relatório foi gerado automaticamente. Revise manualmente os achados para evitar falsos positivos.*
+**Relatório gerado automaticamente pelo Scanner de Segurança Universal**
 """)
 
     print(f"✅ Relatório gerado com sucesso: {caminho_saida}")
@@ -332,9 +317,23 @@ if __name__ == "__main__":
     
     gerar_relatorio(nome_repositorio, resultados, caminho_saida)
 
-    # Também gera cópia para o Pandoc usar no PDF
+    # Cópia temporária para PDF
     with open("temp-report-for-pdf.md", "w", encoding="utf-8") as temp:
         temp.write(open(caminho_saida, encoding="utf-8").read())
 
     print(f"📄 Relatório salvo em: {caminho_saida}")
     print(f"📄 Cópia temporária para PDF: temp-report-for-pdf.md\n")
+
+    # ========= GERAÇÃO DE PDF =========
+    print("🧾 Gerando PDF com pandoc (XeLaTeX)...")
+    os.system(
+        'pandoc '
+        '-V geometry:"a4paper, margin=1in" '
+        '-V mainfont="DejaVu Sans" '
+        '--pdf-engine=xelatex '
+        '--table-of-contents '
+        '"temp-report-for-pdf.md" '
+        f'-o "relatorio-{nome_repositorio}.pdf"'
+    )
+
+    print(f"✅ PDF gerado com sucesso: relatorio-{nome_repositorio}.pdf")
