@@ -31,21 +31,26 @@ jobs:
       - name: 3. Fazer checkout do código do Scanner
         uses: actions/checkout@v4
 
-      - name: 4. Instalar ferramentas necessárias
+      - name: 4. Instalar dependências e ferramentas
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             python3-pip pandoc texlive-latex-base texlive-latex-extra \
             texlive-xetex texlive-fonts-recommended texlive-fonts-extra \
-            texlive-plain-generic curl
-          
-          # Instalar ferramentas de segurança
-          sudo pipx install semgrep
-          curl -sSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sudo bash
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+            texlive-plain-generic curl unzip jq
 
-          # Instalar googletrans com permissão para sobrescrever pacotes do sistema
-          pip install --no-cache-dir --break-system-packages googletrans==4.0.0-rc1
+          # Instalar pacotes Python
+          pip install --no-cache-dir --break-system-packages googletrans==4.0.0-rc1 semgrep
+
+          # Instalar Gitleaks (release oficial)
+          echo "🔐 Instalando Gitleaks..."
+          GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          sudo tar -xzf gitleaks.tar.gz -C /usr/local/bin gitleaks
+
+          # Instalar Trivy (script oficial)
+          echo "📦 Instalando Trivy..."
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
       - name: 5. Clonar repositório alvo
         run: |
@@ -54,6 +59,7 @@ jobs:
       - name: 6. Executar Scans de Segurança
         run: |
           cd repositorio_alvo
+
           echo "🔍 Executando Semgrep..."
           semgrep scan --config auto --json > ../saida-semgrep.json || true
 
@@ -61,8 +67,7 @@ jobs:
           gitleaks detect --report-format json --report-path ../saida-gitleaks.json || true
 
           echo "📦 Executando Trivy (SCA)..."
-          trivy fs --security-checks vuln --format json \
-            --output ../saida-trivy.json .
+          trivy fs --security-checks vuln --format json --output ../saida-trivy.json .
 
       - name: 7. Exibir resultados gerados
         run: |
