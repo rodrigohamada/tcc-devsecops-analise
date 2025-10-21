@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import json
 import os
 import sys
@@ -7,14 +8,25 @@ from googletrans import Translator
 tradutor = Translator()
 
 def traduzir_mensagem(mensagem):
-    """Traduz mensagem do inglês para português"""
     try:
         return tradutor.translate(mensagem, src="en", dest="pt").text
-    except:
+    except Exception:
         return mensagem
 
+def _safe_load_json(path):
+    """Carrega JSON e retorna objeto ou None (com log de erro)."""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"⚠️  Arquivo não encontrado: {path}")
+    except json.JSONDecodeError as e:
+        print(f"⚠️  JSON inválido em {path}: {e}")
+    except Exception as e:
+        print(f"⚠️  Erro ao ler {path}: {e}")
+    return None
+
 def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
-    """Carrega e processa resultados das ferramentas de segurança"""
     resultados = {
         "sast": [],
         "secrets": [],
@@ -22,121 +34,133 @@ def carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy):
     }
 
     # ========== SEMGREP ==========
-    if os.path.isfile(caminho_semgrep):
-        with open(caminho_semgrep, 'r', encoding='utf-8') as f:
-            try:
-                dados = json.load(f)
-                for item in dados.get("results", []):
-                    sev_orig = item.get("extra", {}).get("severity", "").upper()
-                    
-                    mapeamento_severidade = {
-                        "ERROR": "CRÍTICA",
-                        "CRITICAL": "CRÍTICA",
-                        "HIGH": "ALTA",
-                        "WARNING": "MÉDIA",
-                        "MEDIUM": "MÉDIA",
-                        "LOW": "BAIXA",
-                        "INFO": "BAIXA",
-                        "UNKNOWN": "DESCONHECIDA"
-                    }
-                    severidade = mapeamento_severidade.get(sev_orig, "DESCONHECIDA")
-
-                    descricao = item.get("extra", {}).get("message", "")
-                    resultados["sast"].append({
-                        "severidade": severidade,
-                        "regra": item.get("check_id", ""),
-                        "localizacao": f"{item.get('path', '')}:{item.get('start', {}).get('line', '')}",
-                        "descricao": traduzir_mensagem(descricao)
-                    })
-            except json.JSONDecodeError as e:
-                print(f"⚠️  Aviso: JSON do Semgrep inválido: {e}")
-            except Exception as e:
-                print(f"⚠️  Erro ao processar Semgrep: {e}")
+    dados = _safe_load_json(caminho_semgrep)
+    if isinstance(dados, dict):
+        for item in dados.get("results", []):
+            sev_orig = item.get("extra", {}).get("severity", "") or ""
+            sev_orig = sev_orig.upper()
+            mapeamento_severidade = {
+                "ERROR": "CRÍTICA",
+                "CRITICAL": "CRÍTICA",
+                "HIGH": "ALTA",
+                "WARNING": "MÉDIA",
+                "MEDIUM": "MÉDIA",
+                "LOW": "BAIXA",
+                "INFO": "BAIXA",
+                "UNKNOWN": "DESCONHECIDA"
+            }
+            severidade = mapeamento_severidade.get(sev_orig, "DESCONHECIDA")
+            descricao = item.get("extra", {}).get("message", "")
+            resultados["sast"].append({
+                "severidade": severidade,
+                "regra": item.get("check_id", ""),
+                "localizacao": f"{item.get('path', '')}:{item.get('start', {}).get('line', '')}",
+                "descricao": traduzir_mensagem(descricao)
+            })
 
     # ========== GITLEAKS ==========
-    if os.path.isfile(caminho_gitleaks):
-        with open(caminho_gitleaks, 'r', encoding='utf-8') as f:
-            try:
-                dados = json.load(f)
-                if isinstance(dados, list):
-                    for item in dados:
-                        descricao = item.get("Description", "Segredo exposto")
-                        resultados["secrets"].append({
-                            "severidade": "CRÍTICA",
-                            "descricao": traduzir_mensagem(descricao),
-                            "localizacao": f"{item.get('File', '')}:{item.get('StartLine', '')}",
-                            "padrao": item.get("Secret", "N/A")
-                        })
-            except json.JSONDecodeError as e:
-                print(f"⚠️  Aviso: JSON do Gitleaks inválido: {e}")
-            except Exception as e:
-                print(f"⚠️  Erro ao processar Gitleaks: {e}")
+    dados = _safe_load_json(caminho_gitleaks)
+    if isinstance(dados, list):
+        for item in dados:
+            descricao = item.get("Description", "Segredo exposto")
+            resultados["secrets"].append({
+                "severidade": "CRÍTICA",
+                "descricao": traduzir_mensagem(descricao),
+                "localizacao": f"{item.get('File', '')}:{item.get('StartLine', '')}",
+                "padrao": item.get("Secret", "N/A")
+            })
+    elif isinstance(dados, dict) and "results" in dados:
+        # some gitleaks versions produce dict with results
+        for item in dados.get("results", []):
+            descricao = item.get("Description", "Segredo exposto")
+            resultados["secrets"].append({
+                "severidade": "CRÍTICA",
+                "descricao": traduzir_mensagem(descricao),
+                "localizacao": f"{item.get('File', '')}:{item.get('StartLine', '')}",
+                "padrao": item.get("Secret", "N/A")
+            })
 
-    # ========== TRIVY ==========
-    if os.path.isfile(caminho_trivy):
-        with open(caminho_trivy, 'r', encoding='utf-8') as f:
-            try:
-                dados = json.load(f)
-                resultados_trivy = dados.get("Results", [])
-                
-                print(f"📊 Trivy encontrou {len(resultados_trivy)} resultado(s)")
-                
-                for idx, r in enumerate(resultados_trivy):
-                    target = r.get("Target", "desconhecido")
-                    vulns = r.get("Vulnerabilities", [])
-                    
-                    print(f"   Target {idx+1}: {target} - {len(vulns)} vulnerabilidade(s)")
-                    
-                    for v in vulns:
-                        sev = v.get("Severity", "UNKNOWN").upper()
-                        mapeamento_severidade = {
-                            "CRITICAL": "CRÍTICA",
-                            "HIGH": "ALTA",
-                            "MEDIUM": "MÉDIA",
-                            "LOW": "BAIXA",
-                            "UNKNOWN": "DESCONHECIDA"
-                        }
-                        severidade = mapeamento_severidade.get(sev, "DESCONHECIDA")
+    # ========== TRIVY (SCA) ==========
+    dados = _safe_load_json(caminho_trivy)
+    if dados is None:
+        print(f"⚠️  Nenhum JSON do Trivy carregado ({caminho_trivy}).")
+        return resultados
 
-                        titulo = v.get('Title', 'Vulnerabilidade')
-                        vuln_id = v.get('VulnerabilityID', 'N/A')
-                        pacote = v.get('PkgName', '')
-                        versao_instalada = v.get('InstalledVersion', '')
-                        versao_corrigida = v.get('FixedVersion', 'N/A')
-                        
-                        descricao_parts = [titulo]
-                        if pacote:
-                            descricao_parts.append(f"Pacote: {pacote}")
-                        if versao_instalada:
-                            descricao_parts.append(f"Versão instalada: {versao_instalada}")
-                        if versao_corrigida and versao_corrigida != 'N/A':
-                            descricao_parts.append(f"Versão corrigida: {versao_corrigida}")
-                        
-                        descricao = " | ".join(descricao_parts)
-
-                        resultados["sca"].append({
-                            "severidade": severidade,
-                            "vuln_id": vuln_id,
-                            "target": target,
-                            "pacote": pacote,
-                            "versao_instalada": versao_instalada,
-                            "versao_corrigida": versao_corrigida,
-                            "descricao": traduzir_mensagem(descricao)
-                        })
-                
-                print(f"✅ Total de vulnerabilidades SCA processadas: {len(resultados['sca'])}")
-                
-            except json.JSONDecodeError as e:
-                print(f"⚠️  Aviso: JSON do Trivy inválido: {e}")
-            except Exception as e:
-                print(f"⚠️  Erro ao processar Trivy: {e}")
+    # Debug: mostrar estrutura inicial
+    if isinstance(dados, dict):
+        if "Results" in dados:
+            resultados_trivy = dados.get("Results", [])
+            print(f"📊 Trivy: 'Results' encontrado com {len(resultados_trivy)} item(s).")
+        else:
+            # Em alguns casos Trivy pode devolver uma lista direta ou outro layout
+            # Tentamos detectar vulnerabilidades diretamente
+            resultados_trivy = []
+            # Se o dict tiver uma chave "Vulnerabilities" direta (menos comum)
+            if "Vulnerabilities" in dados:
+                resultados_trivy = [dados]
+                print("📊 Trivy: 'Vulnerabilities' direto no objeto raiz.")
+            else:
+                # tentar varrer valores para achar listas de resultados
+                for k, v in dados.items():
+                    if isinstance(v, list) and any(isinstance(x, dict) and "Vulnerabilities" in x for x in v):
+                        resultados_trivy.extend(v)
+                if resultados_trivy:
+                    print(f"📊 Trivy: detectado 'Results'-like em outra chave, total {len(resultados_trivy)}.")
+    elif isinstance(dados, list):
+        # Trivy às vezes pode retornar lista de resultados
+        resultados_trivy = dados
+        print(f"📊 Trivy: JSON é uma lista com {len(resultados_trivy)} item(s).")
     else:
-        print(f"⚠️  Arquivo {caminho_trivy} não encontrado")
+        resultados_trivy = []
+        print("📊 Trivy: formato JSON inesperado.")
+
+    total_vulns = 0
+    for idx, r in enumerate(resultados_trivy):
+        target = r.get("Target", r.get("target", "desconhecido"))
+        vulns = r.get("Vulnerabilities", r.get("vulnerabilities", [])) or []
+        print(f"   - Target {idx+1}: {target} -> {len(vulns)} vulnerabilidade(s) detectada(s).")
+        for v in vulns:
+            total_vulns += 1
+            sev = (v.get("Severity") or v.get("severity") or "UNKNOWN").upper()
+            mapeamento_severidade = {
+                "CRITICAL": "CRÍTICA",
+                "HIGH": "ALTA",
+                "MEDIUM": "MÉDIA",
+                "LOW": "BAIXA",
+                "UNKNOWN": "DESCONHECIDA"
+            }
+            severidade = mapeamento_severidade.get(sev, "DESCONHECIDA")
+
+            titulo = v.get('Title') or v.get('title') or v.get('VulnerabilityID') or 'Vulnerabilidade'
+            vuln_id = v.get('VulnerabilityID') or v.get('vulnerability_id') or v.get('id') or 'N/A'
+            pacote = v.get('PkgName') or v.get('pkgName') or v.get('package') or ''
+            versao_instalada = v.get('InstalledVersion') or v.get('installedVersion') or v.get('installed_version') or ''
+            versao_corrigida = v.get('FixedVersion') or v.get('fixedVersion') or v.get('fixed_version') or 'N/A'
+            descricao_parts = [titulo]
+            if pacote:
+                descricao_parts.append(f"Pacote: {pacote}")
+            if versao_instalada:
+                descricao_parts.append(f"Versão instalada: {versao_instalada}")
+            if versao_corrigida and versao_corrigida != 'N/A':
+                descricao_parts.append(f"Versão corrigida: {versao_corrigida}")
+            descricao = " | ".join(descricao_parts)
+
+            resultados["sca"].append({
+                "severidade": severidade,
+                "vuln_id": vuln_id,
+                "title": titulo,
+                "target": target,
+                "pacote": pacote,
+                "versao_instalada": versao_instalada,
+                "versao_corrigida": versao_corrigida,
+                "descricao": traduzir_mensagem(descricao)
+            })
+
+    print(f"✅ Trivy: total de vulnerabilidades SCA encontradas e processadas: {len(resultados['sca'])} (contagem interna: {total_vulns})")
 
     return resultados
 
 def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
-    """Gera relatório em formato Markdown"""
     todos = resultados['sast'] + resultados['secrets'] + resultados['sca']
     dist = {s: 0 for s in ["CRÍTICA", "ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]}
     for f in todos:
@@ -183,119 +207,82 @@ def gerar_relatorio(nome_repositorio, resultados, caminho_saida):
 #### Achado SAST #{idx}
 
 **Severidade:** {fnd['severidade']}  
-**Regra:** `{fnd['regra']}`  
-**Localização:** `{fnd['localizacao']}`  
-**Descrição:** {fnd['descricao']}  
+**Regra:** `{fnd.get('regra','')}`  
+**Localização:** `{fnd.get('localizacao','')}`  
+**Descrição:** {fnd.get('descricao','')}  
 
 ---
 """)
         else:
             f.write("\nNenhum achado SAST encontrado.\n")
 
-        f.write("""
-### Vazamento de Segredos
-""")
+        f.write("\n### Vazamento de Segredos\n")
         if resultados['secrets']:
             for idx, fnd in enumerate(resultados['secrets'], 1):
+                pad = fnd.get('padrao','N/A')
                 f.write(f"""
 #### Segredo #{idx}
 
 **Severidade:** {fnd['severidade']}  
 **Descrição:** {fnd['descricao']}  
 **Localização:** `{fnd['localizacao']}`  
-**Padrão identificado:** `{fnd['padrao'][:8]}...`  
+**Padrão identificado:** `{pad[:8]}...`  
 
 ---
 """)
         else:
             f.write("\nNenhum segredo encontrado.\n")
 
-        f.write("""
-### Análise de Dependências (SCA)
-""")
+        f.write("\n### Análise de Dependências (SCA)\n")
         if resultados['sca']:
-            sca_por_severidade = {}
+            # agrupa por severidade
+            sca_por_sev = {}
             for fnd in resultados['sca']:
-                sev = fnd['severidade']
-                sca_por_severidade.setdefault(sev, []).append(fnd)
-            
-            ordem_severidade = ["CRÍTICA", "ALTA", "MÉDIA", "BAIXA", "DESCONHECIDA"]
-            contador_global = 1
-            for severidade in ordem_severidade:
-                if severidade in sca_por_severidade:
-                    f.write(f"\n#### Vulnerabilidades de Severidade {severidade}\n\n")
-                    for fnd in sca_por_severidade[severidade]:
-                        f.write(f"""
-##### Vulnerabilidade SCA #{contador_global}
+                sev = fnd.get('severidade','DESCONHECIDA')
+                sca_por_sev.setdefault(sev, []).append(fnd)
 
-**Severidade:** {fnd['severidade']}  
-**ID da Vulnerabilidade:** `{fnd.get('vuln_id', 'N/A')}`  
-**Alvo:** `{fnd.get('target', 'N/A')}`  
-**Pacote:** `{fnd.get('pacote', 'N/A')}`  
-**Versão Instalada:** `{fnd.get('versao_instalada', 'N/A')}`  
-**Versão Corrigida:** `{fnd.get('versao_corrigida', 'N/A')}`  
-**Descrição:** {fnd['descricao']}  
+            ordem = ["CRÍTICA","ALTA","MÉDIA","BAIXA","DESCONHECIDA"]
+            contador = 1
+            for sev in ordem:
+                itens = sca_por_sev.get(sev, [])
+                if not itens:
+                    continue
+                f.write(f"\n#### Vulnerabilidades de Severidade {sev}\n\n")
+                for fnd in itens:
+                    f.write(f"""
+##### Vulnerabilidade SCA #{contador}
+
+**Severidade:** {fnd.get('severidade')}  
+**ID da Vulnerabilidade:** `{fnd.get('vuln_id','N/A')}`  
+**Título:** {fnd.get('title','N/A')}  
+**Alvo:** `{fnd.get('target','N/A')}`  
+**Pacote:** `{fnd.get('pacote','N/A')}`  
+**Versão Instalada:** `{fnd.get('versao_instalada','N/A')}`  
+**Versão Corrigida:** `{fnd.get('versao_corrigida','N/A')}`  
+**Descrição:** {fnd.get('descricao','')}  
 
 ---
 """)
-                        contador_global += 1
+                    contador += 1
         else:
             f.write("\nNenhuma vulnerabilidade em dependências encontrada.\n")
 
-        f.write(f"""
+        f.write("""
 ---
 
 ## Conclusões e Recomendações
 
-### Ações Imediatas (Severidade Crítica: {dist['CRÍTICA']})
-""")
-        
-        if dist['CRÍTICA'] > 0:
-            f.write("""
-- Prioridade máxima: corrigir todas as vulnerabilidades críticas imediatamente
-- Revogar e rotacionar todos os segredos expostos
-- Implementar sanitização adequada nas entradas de usuário
-- Atualizar dependências vulneráveis para versões seguras
-""")
-        else:
-            f.write("\nNenhuma vulnerabilidade crítica encontrada.\n")
-
-        f.write("""
-### Boas Práticas Gerais
-
-1. **Desenvolvimento Seguro**
-   - Validar e sanitizar entradas
-   - Usar consultas parametrizadas
-   - Evitar funções inseguras como eval()
-
-2. **Gerenciamento de Segredos**
-   - Não commitar credenciais
-   - Usar gerenciadores de segredos
-   - Rotacionar periodicamente
-
-3. **Dependências**
-   - Atualizar regularmente
-   - Usar ferramentas de análise no CI/CD
-
-4. **Configuração**
-   - Desativar modo debug em produção
-   - Aplicar logging e monitoramento adequados
-
-5. **Revalidação**
-   - Reexecutar scans após correções
-   - Realizar auditorias periódicas
-
----
-
-**Relatório gerado automaticamente pelo Scanner de Segurança Universal**
+- Corrigir vulnerabilidades críticas imediatamente.  
+- Revogar e rotacionar segredos expostos.  
+- Aplicar boas práticas de desenvolvimento seguro.  
+- Reexecutar os scans após aplicar correções.  
 """)
 
     print(f"✅ Relatório gerado com sucesso: {caminho_saida}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("❌ Erro: nome do repositório não informado.")
-        print("Uso: python3 relatorio.py <nome-repositorio>")
+        print("Erro: nome do repositório não informado.")
         sys.exit(1)
 
     nome_repositorio = sys.argv[1]
@@ -308,32 +295,10 @@ if __name__ == "__main__":
     print("=" * 60)
 
     resultados = carregar_resultados(caminho_semgrep, caminho_gitleaks, caminho_trivy)
-    
-    print("\n📊 Resumo dos resultados:")
-    print(f"   - SAST: {len(resultados['sast'])} achados")
-    print(f"   - Secrets: {len(resultados['secrets'])} achados")
-    print(f"   - SCA: {len(resultados['sca'])} achados")
-    print("=" * 60)
-    
     gerar_relatorio(nome_repositorio, resultados, caminho_saida)
 
-    # Cópia temporária para PDF
+    # Cópia temporária para o Pandoc usar no PDF
     with open("temp-report-for-pdf.md", "w", encoding="utf-8") as temp:
         temp.write(open(caminho_saida, encoding="utf-8").read())
 
-    print(f"📄 Relatório salvo em: {caminho_saida}")
-    print(f"📄 Cópia temporária para PDF: temp-report-for-pdf.md\n")
-
-    # ========= GERAÇÃO DE PDF =========
-    print("🧾 Gerando PDF com pandoc (XeLaTeX)...")
-    os.system(
-        'pandoc '
-        '-V geometry:"a4paper, margin=1in" '
-        '-V mainfont="DejaVu Sans" '
-        '--pdf-engine=xelatex '
-        '--table-of-contents '
-        '"temp-report-for-pdf.md" '
-        f'-o "relatorio-{nome_repositorio}.pdf"'
-    )
-
-    print(f"✅ PDF gerado com sucesso: relatorio-{nome_repositorio}.pdf")
+    print(f"Relatório salvo: {caminho_saida}")
