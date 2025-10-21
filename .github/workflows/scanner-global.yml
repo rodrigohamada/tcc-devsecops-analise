@@ -26,7 +26,7 @@ jobs:
             echo "::error::URL inválida. Forneça a URL principal do repositório (ex: https://github.com/usuario/repositorio)"
             exit 1
           fi
-          echo "✅ URL válida para análise."
+          echo "URL válida para análise."
 
       - name: 3. Fazer checkout do código do Scanner
         uses: actions/checkout@v4
@@ -43,13 +43,13 @@ jobs:
           pip install --no-cache-dir --break-system-packages googletrans==4.0.0-rc1 semgrep
 
           # Instalar Gitleaks (release oficial)
-          echo "🔐 Instalando Gitleaks..."
+          echo "Instalando Gitleaks..."
           GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
           curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz" -o gitleaks.tar.gz
           sudo tar -xzf gitleaks.tar.gz -C /usr/local/bin gitleaks
 
           # Instalar Trivy (script oficial)
-          echo "📦 Instalando Trivy..."
+          echo "Instalando Trivy..."
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
       - name: 5. Clonar repositório alvo
@@ -60,23 +60,23 @@ jobs:
         run: |
           cd repositorio_alvo
 
-          echo "🔍 Executando Semgrep..."
+          echo "Executando Semgrep..."
           semgrep scan --config auto --json > ../saida-semgrep.json || true
 
-          echo "🔐 Executando Gitleaks..."
+          echo "Executando Gitleaks..."
           gitleaks detect --report-format json --report-path ../saida-gitleaks.json || true
 
-          echo "📦 Executando Trivy (SCA - dependências Python)..."
+          echo "Executando Trivy (SCA - dependências Python)..."
           trivy fs --security-checks vuln --format json --output ../saida-trivy.json .
 
-          echo "🐳 Executando Trivy (Imagem base Docker)..."
+          echo "Executando Trivy (Imagem base Docker)..."
           trivy image --format json --output ../saida-trivy-imagem.json python:3.7-slim || true
 
       - name: 7. Exibir resultados gerados
         run: |
-          echo "📁 Listando arquivos gerados:"
+          echo "Listando arquivos gerados:"
           ls -lh ..
-          echo "🔍 Primeiras linhas dos relatórios:"
+          echo "Primeiras linhas dos relatórios:"
           head -n 15 ../saida-trivy.json || true
           head -n 10 ../saida-trivy-imagem.json || true
           head -n 10 ../saida-semgrep.json || true
@@ -87,7 +87,7 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install --no-cache-dir --break-system-packages -r requirements.txt
           else
-            echo "⚠️ Nenhum requirements.txt encontrado, continuando..."
+            echo "Nenhum requirements.txt encontrado, continuando..."
           fi
 
       - name: 9. Gerar relatório em Markdown
